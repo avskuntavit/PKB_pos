@@ -25,6 +25,10 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        if (config('app.env') === 'production' || request()->header('X-Forwarded-Proto') === 'https') {
+            \Illuminate\Support\Facades\URL::forceScheme('https');
+        }
+
         Vite::prefetch(concurrency: 3);
 
         // จับ mass assignment ที่หลุดตั้งแต่ตอน dev
