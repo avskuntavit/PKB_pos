@@ -1,0 +1,164 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+/* ---------------------------------------------------------------
+   Design tokens (shadcn-vue / neutral) + สีสำหรับกราฟ
+   ค่าสีชุดกราฟผ่านการตรวจ contrast/CVD มาแล้ว ทั้งโหมดสว่างและมืด
+   --------------------------------------------------------------- */
+:root {
+    --radius: 0.625rem;
+
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.145 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.145 0 0);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.145 0 0);
+    --primary: oklch(0.205 0 0);
+    --primary-foreground: oklch(0.985 0 0);
+    --secondary: oklch(0.97 0 0);
+    --secondary-foreground: oklch(0.205 0 0);
+    --muted: oklch(0.97 0 0);
+    --muted-foreground: oklch(0.556 0 0);
+    --accent: oklch(0.97 0 0);
+    --accent-foreground: oklch(0.205 0 0);
+    --destructive: oklch(0.577 0.245 27.325);
+    --destructive-foreground: oklch(0.985 0 0);
+    --border: oklch(0.922 0 0);
+    --input: oklch(0.922 0 0);
+    --ring: oklch(0.708 0 0);
+
+    /* ชุดสีกราฟ — เรียงลำดับตายตัว ห้ามวนซ้ำ */
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --series-3: #1baf7a;
+    --series-4: #eda100;
+    --series-5: #e87ba4;
+    --series-6: #008300;
+    --series-7: #4a3aa7;
+    --series-8: #e34948;
+
+    --status-good: #1baf7a;
+    --status-warning: #eda100;
+    --status-critical: #e34948;
+
+    --grid-line: oklch(0.922 0 0);
+}
+
+.dark {
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.205 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: oklch(0.205 0 0);
+    --popover-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.922 0 0);
+    --primary-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.269 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --accent: oklch(0.269 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.704 0.191 22.216);
+    --destructive-foreground: oklch(0.985 0 0);
+    --border: oklch(1 0 0 / 12%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.556 0 0);
+
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-6: #008300;
+    --series-7: #9085e9;
+    --series-8: #e66767;
+
+    --grid-line: oklch(1 0 0 / 12%);
+}
+
+@theme inline {
+    --font-sans: 'Noto Sans Thai', ui-sans-serif, system-ui, sans-serif;
+
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-destructive: var(--destructive);
+    --color-destructive-foreground: var(--destructive-foreground);
+    --color-border: var(--border);
+    --color-input: var(--input);
+    --color-ring: var(--ring);
+
+    --radius-sm: calc(var(--radius) - 4px);
+    --radius-md: calc(var(--radius) - 2px);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+    * {
+        @apply border-border;
+    }
+
+    html {
+        /* iOS Safari ขยายตัวอักษรเองตอนหมุนจอแนวนอน ทำให้ปุ่มบนแท็บเล็ตเพี้ยน */
+        -webkit-text-size-adjust: 100%;
+    }
+
+    body {
+        @apply bg-background text-foreground;
+        font-feature-settings: 'cv02', 'cv03', 'cv04';
+
+        /* กันหน้าเด้งตอนลากเกินขอบบนแท็บเล็ต ซึ่งทำให้ bottom sheet ดูค้าง */
+        overscroll-behavior-y: none;
+    }
+
+    /*
+    | ช่องกรอกบนอุปกรณ์สัมผัส
+    |
+    | เมาส์คลิกแม่นระดับพิกเซล แต่นิ้วพนักงานที่เปียกน้ำไม่แม่น
+    | จอสัมผัสจึงดันช่องกรอกให้สูงอย่างน้อย 44px ตามเกณฑ์ของ Apple
+    | เช็คด้วย pointer:coarse ไม่ใช่ความกว้างจอ เพราะโน้ตบุ๊กจอเล็กไม่ใช่จอสัมผัส
+    |
+    | จงใจไม่เหมาเอา button ด้วย — ปุ่มไอคอนเล็ก ๆ อย่างปุ่ม +/- ในตะกร้า
+    | ถ้าโดนดันแต่ความสูงจะกลายเป็นสี่เหลี่ยมผืนผ้าเบี้ยว ๆ
+    | ปุ่มที่ต้องกดง่ายจริง ๆ กำหนด min-h-11 ไว้ที่ตัวมันเองทีละจุดแทน
+    */
+    @media (pointer: coarse) {
+        select,
+        textarea,
+        input:not([type='checkbox']):not([type='radio']):not([type='range']) {
+            min-height: 2.75rem;
+        }
+    }
+
+    /* ตัวเลขเงินให้เรียงตรงคอลัมน์เสมอ */
+    .tabular {
+        font-variant-numeric: tabular-nums;
+    }
+}
+
+/* ซ่อนส่วนที่ไม่ต้องพิมพ์ตอนสั่งพิมพ์ใบเสร็จ */
+@media print {
+    .no-print {
+        display: none !important;
+    }
+
+    body {
+        background: #fff;
+    }
+}

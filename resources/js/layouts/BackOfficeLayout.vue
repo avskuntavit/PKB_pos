@@ -1,0 +1,284 @@
+<script setup lang="ts">
+import { computed, ref } from 'vue'
+import { Link, router, usePage } from '@inertiajs/vue3'
+import {
+    BadgeCheck,
+    Banknote,
+    Boxes,
+    ChartPie,
+    ChefHat,
+    Clock,
+    FileSpreadsheet,
+    HandCoins,
+    Landmark,
+    LayoutDashboard,
+    LayoutGrid,
+    LogOut,
+    Menu,
+    Percent,
+    Printer,
+    Receipt,
+    Settings,
+    ShieldCheck,
+    SlidersHorizontal,
+    Smartphone,
+    Star,
+    Store,
+    Target,
+    Ticket,
+    TrendingUp,
+    Upload,
+    UserRound,
+    Users,
+    UtensilsCrossed,
+    X,
+} from 'lucide-vue-next'
+import BrandMark from '@/components/ui/BrandMark.vue'
+import Button from '@/components/ui/Button.vue'
+import StationSwitcher from '@/components/backoffice/StationSwitcher.vue'
+import type { PageProps } from '@/types'
+
+defineProps<{ title?: string }>()
+
+const page = usePage<PageProps>()
+const sidebarOpen = ref(false)
+
+const user = computed(() => page.props.auth.user)
+const currentBranch = computed(() => page.props.currentBranch)
+const stationColor = computed(() => currentBranch.value?.theme_color || '#2a78d6')
+
+interface NavItem {
+    name: string
+    icon: any
+    href: string
+}
+
+interface NavSection {
+    title: string
+    items: NavItem[]
+}
+
+const navSections: NavSection[] = [
+    {
+        title: 'ภาพรวมและรายงาน',
+        items: [
+            { name: 'ภาพรวมผู้บริหาร', icon: LayoutDashboard, href: '/backoffice/dashboard' },
+            { name: 'สรุปยอดขาย', icon: ChartPie, href: '/backoffice/summary' },
+            { name: 'ประวัติการขาย', icon: Receipt, href: '/backoffice/sales' },
+            { name: 'รายงานภาษี', icon: FileSpreadsheet, href: '/backoffice/tax' },
+            { name: 'กระทบยอดเงินกับธนาคาร', icon: Landmark, href: '/backoffice/bank-reconciliation' },
+            { name: 'ส่งข้อมูลให้ระบบบัญชี', icon: Upload, href: '/backoffice/sales-export' },
+            { name: 'รายงานต้นทุนและกำไร', icon: TrendingUp, href: '/backoffice/reports/profit' },
+        ],
+    },
+    {
+        title: 'เมนูและคลังสินค้า',
+        items: [
+            { name: 'รายการอาหารและสินค้า', icon: UtensilsCrossed, href: '/backoffice/products' },
+            { name: 'เซ็ตตัวเลือก (Modifiers)', icon: SlidersHorizontal, href: '/backoffice/modifiers' },
+            { name: 'สูตรอาหารและวัตถุดิบ', icon: ChefHat, href: '/backoffice/recipes' },
+            { name: 'สินค้าคงคลังและสต็อก', icon: Boxes, href: '/backoffice/inventory' },
+        ],
+    },
+    {
+        title: 'จัดการหน้าร้าน',
+        items: [
+            { name: 'ผังโต๊ะและ QR สั่งอาหาร', icon: LayoutGrid, href: '/backoffice/tables' },
+            { name: 'รอบการขายและเปิดกะ', icon: Clock, href: '/backoffice/shifts' },
+            { name: 'นำส่งเงินสดประจำวัน', icon: Banknote, href: '/backoffice/cash-settlements' },
+            { name: 'รีวิวและความพึงพอใจ', icon: Star, href: '/backoffice/reviews' },
+            { name: 'เครื่องพิมพ์และคิวงานพิมพ์', icon: Printer, href: '/backoffice/printers' },
+        ],
+    },
+    {
+        title: 'การตลาดและลูกค้า',
+        items: [
+            { name: 'ข้อมูลลูกค้าและสมาชิก', icon: Users, href: '/backoffice/customers' },
+            { name: 'โปรโมชั่นและส่วนลด', icon: Percent, href: '/backoffice/promotions' },
+            { name: 'บัตรกำนัลและ Voucher', icon: Ticket, href: '/backoffice/vouchers' },
+        ],
+    },
+    {
+        title: 'บุคลากรและสวัสดิการ',
+        items: [
+            { name: 'รายชื่อพนักงาน', icon: UserRound, href: '/backoffice/staff' },
+            { name: 'สิทธิ์พนักงานองค์กร', icon: BadgeCheck, href: '/backoffice/employees' },
+            { name: 'รายงานสวัสดิการพนักงาน', icon: HandCoins, href: '/backoffice/staff-benefit' },
+        ],
+    },
+    {
+        title: 'ตั้งค่าระบบ',
+        items: [
+            { name: 'ข้อมูลและตั้งค่าสาขา', icon: Settings, href: '/backoffice/settings/branch' },
+            { name: 'เป้ายอดขายรายเดือน', icon: Target, href: '/backoffice/settings/targets' },
+            { name: 'สิทธิ์การใช้งานพนักงาน', icon: ShieldCheck, href: '/backoffice/settings/permissions' },
+        ],
+    },
+]
+
+function isActive(href: string): boolean {
+    return page.url.startsWith(href)
+}
+
+function logout() {
+    router.post('/logout')
+}
+</script>
+
+<template>
+    <div
+        class="min-h-dvh bg-muted/40"
+        :style="{ '--station-color': stationColor, '--station-color-10': stationColor + '1a', '--station-color-20': stationColor + '33' }"
+    >
+        <!-- แถบสีประจำสถานี (Top Station Color Strip) - แสดงเฉพาะหลังบ้าน -->
+        <div
+            class="sticky top-0 z-50 h-1 w-full shrink-0 shadow-2xs"
+            :style="{ backgroundColor: stationColor }"
+        />
+
+        <!-- Sidebar -->
+        <aside
+            class="fixed inset-y-0 left-0 z-40 w-72 max-w-[85vw] -translate-x-full border-r bg-card transition-transform sm:w-64 lg:translate-x-0 flex flex-col"
+            :class="{ 'translate-x-0': sidebarOpen }"
+        >
+            <!-- Logo Header -->
+            <div class="flex h-14 shrink-0 items-center justify-between border-b px-4 md:h-16">
+                <Link href="/backoffice/dashboard" class="flex items-center" aria-label="ภาพรวมผู้บริหาร">
+                    <BrandMark :height="26" />
+                </Link>
+                <button
+                    class="-me-2 grid size-11 place-items-center rounded-md transition-colors hover:bg-accent lg:hidden"
+                    aria-label="ปิดเมนู"
+                    @click="sidebarOpen = false"
+                >
+                    <X class="size-5" />
+                </button>
+            </div>
+
+            <!-- ส่วนข้อมูลสถานี & ผู้ใช้ปัจจุบันใน Sidebar พร้อมโลโก้สถานี -->
+            <div class="shrink-0 border-b px-4 py-3 bg-muted/20">
+                <div class="flex items-center gap-2.5">
+                    <img
+                        v-if="currentBranch?.logo_path"
+                        :src="currentBranch.logo_path"
+                        class="size-8 rounded-lg object-cover border bg-card shrink-0 shadow-2xs"
+                        :alt="currentBranch.name"
+                    />
+                    <div
+                        v-else
+                        class="flex size-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white shadow-2xs"
+                        :style="{ backgroundColor: stationColor }"
+                    >
+                        {{ currentBranch?.name?.charAt(0) || 'S' }}
+                    </div>
+                    <div class="min-w-0 flex-1">
+                        <p class="truncate text-xs font-bold text-foreground">{{ currentBranch?.name || 'สถานี' }}</p>
+                        <p class="truncate text-[11px] text-muted-foreground">{{ user?.name }} ({{ user?.role_label }})</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- เมนูหลักแยกตามหมวดหมู่ -->
+            <nav class="flex-1 space-y-4 overflow-y-auto overscroll-contain p-2.5">
+                <div
+                    v-for="(section, idx) in navSections"
+                    :key="section.title"
+                    :class="{ 'border-t pt-3': idx > 0 }"
+                >
+                    <p class="px-2.5 pb-1.5 text-[11px] font-semibold text-muted-foreground/75 tracking-wider">
+                        {{ section.title }}
+                    </p>
+                    <div class="space-y-0.5">
+                        <Link
+                            v-for="item in section.items"
+                            :key="item.href"
+                            :href="item.href"
+                            class="group flex min-h-10 items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all"
+                            :class="
+                                isActive(item.href)
+                                    ? 'font-semibold shadow-2xs'
+                                    : 'text-muted-foreground hover:bg-accent/70 hover:text-foreground'
+                            "
+                            :style="
+                                isActive(item.href)
+                                    ? { color: stationColor, backgroundColor: stationColor + '18' }
+                                    : {}
+                            "
+                        >
+                            <component
+                                :is="item.icon"
+                                class="size-4 shrink-0 transition-transform group-hover:scale-110"
+                                :style="isActive(item.href) ? { color: stationColor } : {}"
+                            />
+                            <span class="truncate">{{ item.name }}</span>
+                        </Link>
+                    </div>
+                </div>
+
+                <!-- ลิงก์หน้าร้าน / การเข้าสู่ระบบ -->
+                <div class="border-t pt-3 pb-2 space-y-0.5">
+                    <p class="px-2.5 pb-1.5 text-[11px] font-semibold text-muted-foreground/75 tracking-wider">
+                        ทางลัดหน้าร้าน
+                    </p>
+                    <Link
+                        href="/pos"
+                        class="flex min-h-10 items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                    >
+                        <Store class="size-4 shrink-0" />
+                        <span class="truncate">เปิดหน้าขาย (POS)</span>
+                    </Link>
+                    <a
+                        href="/order"
+                        class="flex min-h-10 items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                    >
+                        <Smartphone class="size-4 shrink-0" />
+                        <span class="truncate">หน้าร้านสั่งอาหารออนไลน์</span>
+                    </a>
+                    <button
+                        class="flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                        @click="logout"
+                    >
+                        <LogOut class="size-4 shrink-0" />
+                        <span class="truncate">ออกจากระบบ</span>
+                    </button>
+                </div>
+            </nav>
+        </aside>
+
+        <div
+            v-if="sidebarOpen"
+            class="fixed inset-0 z-30 bg-black/40 lg:hidden"
+            @click="sidebarOpen = false"
+        />
+
+        <!-- Content -->
+        <div class="lg:pl-64">
+            <header class="sticky top-0 z-20 flex h-14 items-center gap-2 border-b bg-background/95 px-3 backdrop-blur sm:gap-3 sm:px-4 md:h-16">
+                <Button variant="ghost" size="icon" class="lg:hidden" aria-label="เปิดเมนู" @click="sidebarOpen = true">
+                    <Menu />
+                </Button>
+                <h1 class="min-w-0 flex-1 truncate text-base font-semibold sm:text-lg">{{ title }}</h1>
+
+                <!-- สถานีที่กำลังดู — อยู่บนหัวทุกหน้า เพราะทุกหน้าหลังบ้านเป็นข้อมูลรายสถานี พร้อมแสดงโลโก้ -->
+                <StationSwitcher />
+            </header>
+
+            <main class="mx-auto w-full max-w-[1400px] space-y-4 p-3 sm:p-4 xl:p-6 2xl:max-w-[1600px]">
+                <div
+                    v-if="page.props.flash.success"
+                    class="rounded-lg border border-[var(--status-good)]/30 bg-[var(--status-good)]/10 px-4 py-2 text-sm text-[var(--status-good)]"
+                >
+                    {{ page.props.flash.success }}
+                </div>
+                <div
+                    v-if="page.props.flash.error"
+                    class="rounded-lg border border-[var(--status-critical)]/30 bg-[var(--status-critical)]/10 px-4 py-2 text-sm text-[var(--status-critical)]"
+                >
+                    {{ page.props.flash.error }}
+                </div>
+
+                <slot />
+            </main>
+        </div>
+    </div>
+</template>
