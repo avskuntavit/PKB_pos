@@ -54,6 +54,8 @@ class ActivityLog extends Model
             'target.update' => 'ตั้งเป้ายอดขาย',
             'shift.open' => 'เปิดรอบการขาย',
             'shift.close' => 'ปิดรอบการขาย',
+            'period.close' => 'ปิดงวดบัญชี',
+            'period.reopen' => 'เปิดงวดบัญชีกลับมา',
         ];
     }
 }

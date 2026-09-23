@@ -2,6 +2,7 @@
 
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schedule;
 
 Artisan::command('inspire', function () {
@@ -48,3 +49,30 @@ Schedule::command('printers:work')
 Schedule::command('sales:export')
     ->dailyAt('06:00')
     ->withoutOverlapping();
+
+/*
+| สำรองข้อมูล
+|
+| ตีสามครึ่งเป็นค่าตั้งต้น — หลังร้านปิดแน่นอน และก่อน 05:00 ที่เป็นจุดตัดวันขาย
+| จึงได้ภาพของ "วันที่ปิดไปแล้ว" เต็มวัน ไม่ใช่วันที่กำลังขายอยู่ครึ่ง ๆ กลาง ๆ
+|
+| ไม่ใส่ runInBackground โดยตั้งใจ — งานสำรองไม่ควรทับกับงานอื่น
+| และเราอยากให้ล็อกของ withoutOverlapping ครอบทั้งช่วงที่มันทำงานจริง
+*/
+Schedule::command('backup:run')
+    ->dailyAt((string) config('monitoring.backup.time', '03:30'))
+    ->withoutOverlapping(120);
+
+/*
+| สัญญาณชีพของตัวตั้งเวลา
+|
+| ตัวตั้งเวลาตายแล้วหน้าเว็บยังใช้งานได้ทุกอย่าง จึงไม่มีใครรู้ว่ามันตาย
+| แต่ของที่หยุดตามคือ งานพิมพ์ที่ค้าง การส่งข้อมูลบัญชี และการสำรองข้อมูล
+|
+| ให้มันเคาะเวลาทิ้งไว้ แล้วหน้า /backoffice/health ดูว่าเคาะล่าสุดเมื่อไหร่
+| ถ้าเงียบเกิน SCHEDULER_STALE_MINUTES จะขึ้นเตือนทันที
+| ตัวนี้ต้องเบาที่สุดเพราะเดินทุก 5 นาทีตลอดเวลา — เขียนค่าเดียวลงแคชเท่านั้น
+*/
+Schedule::call(function () {
+    Cache::forever((string) config('monitoring.scheduler.ping_key'), now()->toIso8601String());
+})->everyFiveMinutes()->name('scheduler-heartbeat');

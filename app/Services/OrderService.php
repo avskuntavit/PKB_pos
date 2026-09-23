@@ -89,7 +89,7 @@ class OrderService
     /** เพิ่มรายการอาหารลงบิล */
     public function addItem(Order $order, Product $product, float $qty = 1, array $modifierIds = [], ?string $note = null, ?float $openPrice = null): OrderItem
     {
-        $this->assertOpen($order);
+        $this->assertEditable($order);
 
         // ตรวจกฎของกลุ่มตัวเลือกที่ฝั่งเซิร์ฟเวอร์ด้วย
         // หน้าเว็บกันได้แค่คนกดปกติ แต่ยิง request ตรงข้าม UI ได้
@@ -226,7 +226,7 @@ class OrderService
 
     public function updateItemQty(OrderItem $item, float $qty): OrderItem
     {
-        $this->assertOpen($item->order);
+        $this->assertEditable($item->order);
 
         return DB::transaction(function () use ($item, $qty) {
             if ($qty <= 0) {
@@ -253,7 +253,7 @@ class OrderService
      */
     public function setItemCourse(OrderItem $item, ?Course $course): OrderItem
     {
-        $this->assertOpen($item->order);
+        $this->assertEditable($item->order);
 
         if ($item->status !== 'pending') {
             throw ValidationException::withMessages([
@@ -269,7 +269,7 @@ class OrderService
     /** ยกเลิกรายการ (ไม่ลบจริง เพื่อให้ตรวจสอบย้อนหลังได้) */
     public function voidItem(OrderItem $item, ?string $reason = null): OrderItem
     {
-        $this->assertOpen($item->order);
+        $this->assertEditable($item->order);
 
         return DB::transaction(function () use ($item, $reason) {
             $item->update([
@@ -306,7 +306,7 @@ class OrderService
      */
     public function sendToKitchen(Order $order, ?array $itemIds = null): int
     {
-        $this->assertOpen($order);
+        $this->assertEditable($order);
 
         return DB::transaction(function () use ($order, $itemIds) {
             $items = $order->items()
@@ -411,7 +411,7 @@ class OrderService
     /** ใส่ส่วนลดท้ายบิล */
     public function applyBillDiscount(Order $order, float $amount = 0, ?float $percent = null): Order
     {
-        $this->assertOpen($order);
+        $this->assertEditable($order);
 
         $base = (float) $order->subtotal - (float) $order->item_discount;
         $order->bill_discount = $percent !== null
@@ -509,7 +509,7 @@ class OrderService
     /** ย้ายโต๊ะ */
     public function moveTable(Order $order, DiningTable $target): Order
     {
-        $this->assertOpen($order);
+        $this->assertEditable($order);
 
         return DB::transaction(function () use ($order, $target) {
             $order->diningTable?->update(['status' => TableStatus::Available]);
@@ -525,6 +525,15 @@ class OrderService
     /** ทำลายบิล */
     public function void(Order $order, string $reason): Order
     {
+        /*
+        | ทำลายบิลไม่ผ่าน assertEditable() เพราะบิลที่ปิดไปแล้วก็ยังทำลายได้
+        | (เช่นรับเงินผิดคน) จึงต้องเช็คงวดเองตรงนี้
+        |
+        | และนี่คือช่องที่อันตรายที่สุดถ้าลืม — ทำลายบิลเก่าหนึ่งใบ
+        | ยอดขายทั้งเดือนที่ยื่นภาษีไปแล้วเปลี่ยนทันทีโดยไม่มีใครรู้
+        */
+        app(PeriodLockService::class)->assertEditable($order);
+
         return DB::transaction(function () use ($order, $reason) {
             $order->update([
                 'status' => OrderStatus::Void,
@@ -606,10 +615,22 @@ class OrderService
         return (float) $outcome['discount'];
     }
 
-    protected function assertOpen(Order $order): void
+    /**
+     * ด่านเดียวที่ทุกเมธอดซึ่งแก้บิลต้องผ่าน
+     *
+     * เดิมชื่อ assertOpen() และเช็คแค่ว่าบิลยังเปิดอยู่ พอมีการปิดงวดบัญชีเข้ามา
+     * เงื่อนไข "แก้บิลนี้ได้ไหม" มีสองข้อแล้ว จึงรวมไว้ที่เดียวและเปลี่ยนชื่อให้ตรงกับหน้าที่
+     *
+     * รวมไว้ที่นี่ ไม่กระจายไปเรียกตามเมธอด เพราะวันหน้าที่มีคนเพิ่มเมธอดแก้บิลตัวใหม่
+     * เขาจะก๊อป assertEditable() ตามของเดิมโดยอัตโนมัติ — ด่านที่ต้องจำว่าต้องใส่
+     * คือด่านที่วันหนึ่งจะมีคนลืมใส่
+     */
+    protected function assertEditable(Order $order): void
     {
         if (! $order->isOpen()) {
             throw new \DomainException('บิลนี้ปิดไปแล้ว ไม่สามารถแก้ไขได้');
         }
+
+        app(PeriodLockService::class)->assertEditable($order);
     }
 }

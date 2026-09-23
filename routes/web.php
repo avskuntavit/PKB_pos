@@ -208,6 +208,34 @@ Route::middleware(['auth', 'permission:backoffice.access'])
             Route::delete('stations/{branch}/images/{image}', [BackOffice\StationController::class, 'destroyImage'])->name('stations.images.destroy');
         });
 
+        /*
+        | สุขภาพระบบ — สำรองข้อมูล ข้อผิดพลาด และค่าตั้งค่าที่อันตราย
+        |
+        | เป็นเรื่องของทั้งระบบ ไม่ใช่ของสาขาใดสาขาหนึ่ง จึงไม่มีตัวกรองสาขา
+        | และให้เฉพาะเจ้าของระบบเข้า เพราะหน้านี้บอก path ของไฟล์สำรอง
+        | กับ stack trace ซึ่งเป็นข้อมูลที่ช่วยคนที่อยากเจาะระบบได้มาก
+        */
+        /*
+        | ปิดงวดบัญชี
+        |
+        | ผู้จัดการปิดงวดได้ (เขาเป็นคนกระทบยอดและส่งข้อมูลให้บัญชีอยู่แล้ว)
+        | แต่ "เปิดงวดที่ปิดแล้วกลับมา" เป็นของเจ้าของระบบเท่านั้น
+        | ด่านนั้นอยู่ใน PeriodLockService::reopen() ไม่ใช่ที่ middleware
+        | เพราะถ้าอยู่ที่ route จะมีแค่หน้าเว็บที่กัน ส่วนโค้ดที่เรียกตรงยังทะลุได้
+        */
+        Route::middleware('permission:period.close')->group(function () {
+            Route::get('periods', [BackOffice\PeriodController::class, 'index'])->name('periods.index');
+            Route::post('periods/close', [BackOffice\PeriodController::class, 'close'])->name('periods.close');
+            Route::post('periods/reopen', [BackOffice\PeriodController::class, 'reopen'])->name('periods.reopen');
+        });
+
+        Route::middleware('permission:system.health')->group(function () {
+            Route::get('health', [BackOffice\HealthController::class, 'index'])->name('health');
+            Route::post('health/backup', [BackOffice\HealthController::class, 'backup'])->name('health.backup');
+            Route::post('health/errors/{event}/resolve', [BackOffice\HealthController::class, 'resolveError'])->name('health.errors.resolve');
+            Route::post('health/errors/{event}/reopen', [BackOffice\HealthController::class, 'reopenError'])->name('health.errors.reopen');
+        });
+
         Route::middleware('permission:branch.settings')->group(function () {
             Route::get('settings/branch', [BackOffice\BranchSettingController::class, 'edit'])->name('settings.branch');
             Route::put('settings/branch', [BackOffice\BranchSettingController::class, 'update'])->name('settings.branch.update');

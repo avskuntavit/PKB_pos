@@ -38,6 +38,16 @@ services:
       CACHE_STORE: database
       QUEUE_CONNECTION: database
 
+      # ── การสำรองข้อมูล ────────────────────────────────────────────────
+      # BACKUP_SQL_PATH คือโฟลเดอร์บน "เครื่อง SQL Server" ไม่ใช่ในคอนเทนเนอร์นี้
+      # เพราะคนเขียนไฟล์ .bak คือ SQL Server ไม่ใช่แอป — service account ของ
+      # SQL Server ต้องมีสิทธิ์เขียนที่นั่น ถ้าเป็นโฟลเดอร์แชร์ (\\nas\pos-backup)
+      # service account ต้องเป็น domain user ไม่ใช่บัญชีระบบของเครื่อง
+      BACKUP_SQL_PATH: ${BACKUP_SQL_PATH:-C:\PosBackup}
+      BACKUP_TIME: ${BACKUP_TIME:-03:30}
+      # เปิดได้เฉพาะ SQL Server Standard ขึ้นไป — Express จะได้ error 1844
+      BACKUP_COMPRESSION: ${BACKUP_COMPRESSION:-false}
+
       # ปิดเสมอนอกเครื่องพัฒนา — ถ้าเปิดค้าง รหัส OTP จะโชว์บนหน้าจอ
       # แล้วใครก็ล็อกอินเป็นลูกค้าคนไหนก็ได้ (config/foodpos.php บังคับปิดซ้ำอีกชั้น)
       FOODPOS_OTP_DRIVER: log
@@ -48,7 +58,14 @@ services:
       # ของพวกนี้จะหายทุกครั้งที่ build image ใหม่
       - pos-uploads:/var/www/html/storage/app/public
       - pos-logs:/var/www/html/storage/logs
+      # สำเนา zip ของรูปและไฟล์ส่งบัญชี — ถ้าไม่ผูกไว้ ไฟล์สำรองจะหายทุกครั้งที่ build ใหม่
+      # ซึ่งแปลว่าไม่ได้สำรองอะไรเลย แค่รู้สึกว่าสำรอง
+      #
+      # ให้ดีกว่านี้: เปลี่ยนเป็น bind mount ไปโฟลเดอร์แชร์บน NAS
+      #   - //nas/pos-backup:/var/www/html/storage/app/backups
+      - pos-backups:/var/www/html/storage/app/backups
 
 volumes:
   pos-uploads:
   pos-logs:
+  pos-backups:

@@ -16,7 +16,16 @@ import Modal from '@/components/ui/Modal.vue'
 import ImageField from '@/components/backoffice/ImageField.vue'
 import ProductPreview from '@/components/backoffice/ProductPreview.vue'
 import { money } from '@/lib/format'
-import type { Category, Paginated } from '@/types'
+import type { Category, DietTag, Paginated } from '@/types'
+
+/** ป้ายข้อมูลอาหารจัดเป็นกลุ่มตามที่ลูกค้าอ่าน — มาจาก App\Enums\DietTag::grouped() */
+interface DietTagGroup {
+    /** ชนิดเดียวกับที่หน้าลูกค้าใช้ ไม่ใช่ string เปล่า ๆ — จะได้พังตั้งแต่ตอน build ถ้าเพิ่มกลุ่มใหม่แล้วลืมแก้ที่นี่ */
+    kind: DietTag['kind']
+    label: string
+    hint: string
+    tags: Array<{ value: string; label: string }>
+}
 
 /** เซ็ตตัวเลือกของสาขา — ใช้เลือกผูกจากฝั่งเมนู */
 interface GroupOption {
@@ -40,6 +49,7 @@ const props = defineProps<{
     categories: Category[]
     modifierGroups: GroupOption[]
     printGroups: Array<{ value: number; label: string }>
+    dietTags: DietTagGroup[]
     imageSpec: {
         label: string
         width: number
@@ -97,25 +107,96 @@ const showForm = ref(false)
 const editing = ref<Row | null>(null)
 const confirmingDelete = ref(false)
 
-const form = useForm({
-    name: '',
-    category_id: '' as number | string,
-    sku: '',
-    barcode: '',
-    price: 0 as number | string,
-    cost: 0 as number | string,
-    staff_price: '' as number | string,
-    unit: '',
-    description: '',
-    sort_order: 0 as number | string,
-    print_group: 1 as number | string,
-    is_active: true,
-    is_alcohol: false,
-    track_stock: false,
-    is_open_price: false,
-    image: null as File | null,
-    remove_image: false,
-})
+/*
+| ค่าของ "ฟอร์มเมนูเปล่า" — เป็นฟังก์ชัน ไม่ใช่ค่าคงที่ก้อนเดียว ด้วยเหตุผลสองข้อ
+|
+| 1) useForm จำค่าตั้งต้นไว้ชุดหนึ่ง แล้ว form.reset() คืนค่าจากชุดนั้น
+|    openEdit() เรียก form.defaults() ทับด้วยข้อมูลเมนูที่กำลังแก้ ค่าตั้งต้นจึงเปลี่ยนไปแล้ว
+|    ถ้า openCreate() เรียกแต่ reset() เฉย ๆ จะได้ข้อมูล "เมนูที่แก้ล่าสุด" กลับมาแทนฟอร์มเปล่า
+|    (อาการที่เจอ: แก้เมนูหนึ่ง ปิดหน้าต่าง แล้วกดเพิ่มเมนู จะเจอข้อมูลเมนูเดิมค้างอยู่
+|    แล้วกดบันทึกทีเดียวได้เมนูซ้ำโดยไม่ตั้งใจ)
+|
+| 2) diet_tags เป็นอาร์เรย์ ถ้าคืนก้อนเดิมทุกครั้ง การติ๊กป้ายในฟอร์ม
+|    จะไปแก้ค่าตั้งต้นที่ทุกครั้งใช้ร่วมกันด้วย
+*/
+function emptyForm() {
+    return {
+        name: '',
+        category_id: '' as number | string,
+        sku: '',
+        barcode: '',
+        price: 0 as number | string,
+        cost: 0 as number | string,
+        staff_price: '' as number | string,
+        unit: '',
+        description: '',
+        sort_order: 0 as number | string,
+        print_group: 1 as number | string,
+        is_active: true,
+        is_alcohol: false,
+        track_stock: false,
+        is_open_price: false,
+        // ค่าของ App\Enums\DietTag เช่น ['spicy', 'contains_nut']
+        diet_tags: [] as string[],
+        image: null as File | null,
+        remove_image: false,
+    }
+}
+
+/** ค่าของเมนูที่กำลังแก้ ในรูปแบบเดียวกับฟอร์มเปล่า */
+function editForm(p: Row) {
+    return {
+        ...emptyForm(),
+        name: p.name ?? '',
+        category_id: p.category_id ?? '',
+        sku: p.sku ?? '',
+        barcode: p.barcode ?? '',
+        price: p.price ?? 0,
+        cost: p.cost ?? 0,
+        staff_price: p.staff_price ?? '',
+        unit: p.unit ?? '',
+        description: p.description ?? '',
+        sort_order: p.sort_order ?? 0,
+        print_group: p.print_group ?? 1,
+        is_active: Boolean(p.is_active),
+        is_alcohol: Boolean(p.is_alcohol),
+        track_stock: Boolean(p.track_stock),
+        is_open_price: Boolean(p.is_open_price),
+        // สำเนาอาร์เรย์เสมอ ไม่งั้นการติ๊กในฟอร์มจะไปแก้แถวในตารางที่อยู่ข้างหลังด้วย
+        diet_tags: Array.isArray(p.diet_tags) ? [...p.diet_tags] : [],
+    }
+}
+
+const form = useForm(emptyForm())
+
+/*
+| สีของป้ายแยกตามกลุ่ม ไม่ใช่แยกตามป้าย — ชุดเดียวกับ DietBadges.vue ที่ลูกค้าเห็น
+| ตั้งใจให้ตรงกัน คนตั้งค่าจะได้รู้ตั้งแต่ตอนติ๊กว่าอันไหนจะไปขึ้นเป็นคำเตือนสีส้ม
+*/
+const DIET_KIND_CLASS: Record<string, string> = {
+    heat: 'bg-[var(--status-critical)]/12 text-[var(--status-critical)] border-[var(--status-critical)]/30',
+    diet: 'bg-[var(--status-good)]/12 text-[var(--status-good)] border-[var(--status-good)]/30',
+    allergen: 'bg-[var(--status-warning)]/15 text-[var(--status-warning)] border-[var(--status-warning)]/30',
+}
+
+function toggleDietTag(value: string) {
+    const i = form.diet_tags.indexOf(value)
+
+    if (i >= 0) {
+        form.diet_tags.splice(i, 1)
+    } else {
+        form.diet_tags.push(value)
+    }
+}
+
+/** ป้ายที่ติ๊กอยู่ตอนนี้ ในรูปแบบเดียวกับที่หน้าลูกค้าได้รับ — ส่งให้แผ่นตัวอย่าง */
+const selectedDietTags = computed<DietTag[]>(() =>
+    props.dietTags.flatMap((group) =>
+        group.tags
+            .filter((t) => form.diet_tags.includes(t.value))
+            .map((t) => ({ value: t.value, label: t.label, kind: group.kind })),
+    ),
+)
 
 /** รูปที่โชว์ในแผ่นตัวอย่าง — ไฟล์ที่เพิ่งเลือก > รูปเดิมของเมนู > ไม่มี */
 const localPreview = ref<string | null>(null)
@@ -144,50 +225,46 @@ watch(
 
 onBeforeUnmount(clearPreview)
 
-function resetForm() {
+/**
+ * เปิดฟอร์มด้วยค่าชุดหนึ่ง — ต้อง defaults() ก่อน reset() เสมอ
+ *
+ * ── พฤติกรรมจริงของ useForm (ตรวจจากซอร์ส @inertiajs/vue3) ──────────────
+ *   defaults(obj)  ทำ Object.assign({}, cloneDeep(defaults), obj) = **ผสม** ไม่ใช่แทนที่
+ *   reset()        เอา cloneDeep(defaults) มาทับทั้งฟอร์ม
+ *
+ * สองข้อนี้รวมกันแปลว่า ค่าตั้งต้นที่ openEdit() ใส่ไว้จะค้างอยู่ตลอด
+ * จนกว่าจะมีใครส่งคีย์นั้นมาทับ — เพราะงั้น emptyForm() ต้องคืน **ทุกคีย์** เสมอ
+ * วันไหนมีคนเติมช่องใหม่ในฟอร์มแล้วลืมใส่ใน emptyForm() ข้อมูลเมนูเก่าจะโผล่ทันที
+ *
+ * บรรทัด diet_tags ข้างล่างเป็นกันเหนียว — reset() ก๊อปลึกให้อยู่แล้ว
+ * แต่ค่าตั้งต้นเก็บ "อาร์เรย์ก้อนที่เราส่งเข้าไป" ไว้ตรง ๆ ไม่ได้ก๊อป
+ */
+function fillForm(values: ReturnType<typeof emptyForm>) {
     clearPreview()
-    form.reset()
     form.clearErrors()
+    form.defaults(values)
+    form.reset()
+    form.diet_tags = [...values.diet_tags]
     confirmingDelete.value = false
 }
 
 function openCreate() {
     editing.value = null
-    resetForm()
+    fillForm(emptyForm())
     showForm.value = true
 }
 
 function openEdit(p: Row) {
     editing.value = p
-    clearPreview()
-    form.clearErrors()
-    form.defaults({
-        name: p.name ?? '',
-        category_id: p.category_id ?? '',
-        sku: p.sku ?? '',
-        barcode: p.barcode ?? '',
-        price: p.price ?? 0,
-        cost: p.cost ?? 0,
-        staff_price: p.staff_price ?? '',
-        unit: p.unit ?? '',
-        description: p.description ?? '',
-        sort_order: p.sort_order ?? 0,
-        print_group: p.print_group ?? 1,
-        is_active: Boolean(p.is_active),
-        is_alcohol: Boolean(p.is_alcohol),
-        track_stock: Boolean(p.track_stock),
-        is_open_price: Boolean(p.is_open_price),
-        image: null,
-        remove_image: false,
-    })
-    form.reset()
-    confirmingDelete.value = false
+    fillForm(editForm(p))
     showForm.value = true
 }
 
 function closeForm() {
     showForm.value = false
-    resetForm()
+
+    // ล้างกลับเป็นฟอร์มเปล่า ไม่ใช่ reset() เฉย ๆ ซึ่งจะคืนค่าของเมนูที่เพิ่งแก้กลับมาค้างไว้
+    fillForm(emptyForm())
 }
 
 function submit() {
@@ -770,6 +847,44 @@ function activeSetNames(p: Row): string[] {
                         </label>
                     </div>
 
+                    <!-- ป้ายข้อมูลอาหาร — ขึ้นบนการ์ดเมนูและในหน้าต่างสั่งของลูกค้า -->
+                    <div class="space-y-3 rounded-lg border p-3">
+                        <div class="flex items-center gap-2">
+                            <Tags class="size-4 shrink-0 text-muted-foreground" />
+                            <p class="text-sm font-medium">ป้ายข้อมูลอาหาร</p>
+                            <span class="text-xs text-muted-foreground">
+                                {{ form.diet_tags.length ? `ติ๊กไว้ ${form.diet_tags.length} ป้าย` : 'ยังไม่ได้ติ๊ก' }}
+                            </span>
+                        </div>
+
+                        <div v-for="group in dietTags" :key="group.kind" class="space-y-1.5">
+                            <p class="text-xs font-medium">{{ group.label }}</p>
+                            <p class="text-[11px] leading-relaxed text-muted-foreground">{{ group.hint }}</p>
+
+                            <div class="flex flex-wrap gap-1.5">
+                                <button
+                                    v-for="tag in group.tags"
+                                    :key="tag.value"
+                                    type="button"
+                                    class="rounded-full border px-2.5 py-1 text-xs transition-colors"
+                                    :class="
+                                        form.diet_tags.includes(tag.value)
+                                            ? DIET_KIND_CLASS[group.kind] ?? 'border-input bg-muted'
+                                            : 'border-input text-muted-foreground hover:bg-accent'
+                                    "
+                                    :aria-pressed="form.diet_tags.includes(tag.value)"
+                                    @click="toggleDietTag(tag.value)"
+                                >
+                                    {{ tag.label }}
+                                </button>
+                            </div>
+                        </div>
+
+                        <p v-if="form.errors.diet_tags" class="text-xs text-destructive">
+                            {{ form.errors.diet_tags }}
+                        </p>
+                    </div>
+
                     <div class="flex flex-wrap items-center gap-2 border-t pt-3">
                         <template v-if="editing">
                             <Button
@@ -822,6 +937,7 @@ function activeSetNames(p: Row): string[] {
                             :image="previewSrc"
                             :promo-label="(editing?.promo_label as string | null) ?? null"
                             :is-active="form.is_active"
+                            :diet-tags="selectedDietTags"
                         />
                     </div>
                 </div>

@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\ResolveCurrentBranch;
+use App\Services\ErrorMonitor;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -35,5 +36,17 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        //
+        /*
+        | เก็บ error ของระบบลงตาราง error_events เพื่อให้มีหน้าให้ดูย้อนหลังได้
+        |
+        | ── ทำไมไม่ return false ──────────────────────────────────────────
+        | คืนค่าอะไรก็ตามที่ไม่ใช่ false แปลว่า "บันทึกของฉันเสร็จแล้ว ทำต่อตามเดิมด้วย"
+        | log ไฟล์จึงยังเขียนครบเหมือนเดิม ตารางนี้เป็นของเพิ่ม ไม่ใช่ของแทน
+        |
+        | ErrorMonitor กรองพวก 4xx (กรอกฟอร์มไม่ครบ / ไม่มีสิทธิ์ / หน้าไม่มี) ออกเอง
+        | และห้ามโยน exception ออกมาไม่ว่ากรณีใด — ดูคำอธิบายในคลาสนั้น
+        */
+        $exceptions->report(function (Throwable $e) {
+            app(ErrorMonitor::class)->record($e);
+        });
     })->create();

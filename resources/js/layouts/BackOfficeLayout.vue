@@ -2,11 +2,13 @@
 import { computed, ref } from 'vue'
 import { Link, router, usePage } from '@inertiajs/vue3'
 import {
+    Activity,
     ArrowLeftRight,
     BadgeCheck,
     Banknote,
     Boxes,
     Building2,
+    CalendarCheck,
     ChartPie,
     ChefHat,
     Clock,
@@ -47,6 +49,40 @@ const sidebarOpen = ref(false)
 
 const user = computed(() => page.props.auth.user)
 const currentBranch = computed(() => page.props.currentBranch)
+
+/*
+| แถบเตือนสุขภาพระบบ
+|
+| เป็น null เมื่อคนนี้ไม่มีสิทธิ์ดู — แถบและตัวเลขบนเมนูจะไม่ขึ้นเลย
+| ตัวเลขมาจากฝั่งเซิร์ฟเวอร์ (แคช 60 วินาที) ไม่ได้คำนวณใหม่ทุกครั้งที่เปลี่ยนหน้า
+*/
+const alerts = computed(() => page.props.systemAlerts)
+
+const alertCount = computed(() => {
+    const a = alerts.value
+    if (!a) return 0
+    return a.backup_stale + a.open_errors + (a.scheduler_down ? 1 : 0)
+})
+
+/** ข้อความบนแถบ — เรียงจากเรื่องที่เสียหายมากที่สุดก่อน */
+const alertMessages = computed(() => {
+    const a = alerts.value
+    if (!a) return []
+
+    const out: string[] = []
+
+    if (a.scheduler_down) {
+        out.push('ตัวตั้งเวลาหยุดทำงาน — งานพิมพ์ที่ค้าง การส่งข้อมูลบัญชี และการสำรองข้อมูล หยุดทั้งหมด')
+    }
+    if (a.backup_stale > 0) {
+        out.push(`ขาดการสำรองข้อมูล ${a.backup_stale} รายการ`)
+    }
+    if (a.open_errors > 0) {
+        out.push(`มีข้อผิดพลาดที่ยังไม่ได้ตรวจ ${a.open_errors} เรื่อง`)
+    }
+
+    return out
+})
 const stationColor = computed(() => currentBranch.value?.theme_color || '#2a78d6')
 
 interface NavItem {
@@ -72,6 +108,7 @@ const navSections: NavSection[] = [
             { name: 'รายงานภาษี', icon: FileSpreadsheet, href: '/backoffice/tax' },
             { name: 'กระทบยอดเงินกับธนาคาร', icon: Landmark, href: '/backoffice/bank-reconciliation' },
             { name: 'ส่งข้อมูลให้ระบบบัญชี', icon: Upload, href: '/backoffice/sales-export' },
+            { name: 'ปิดงวดบัญชี', icon: CalendarCheck, href: '/backoffice/periods' },
             { name: 'รายงานต้นทุนและกำไร', icon: TrendingUp, href: '/backoffice/reports/profit' },
         ],
     },
@@ -115,6 +152,7 @@ const navSections: NavSection[] = [
         title: 'ตั้งค่าระบบ',
         items: [
             { name: 'สถานีทั้งหมด', icon: Building2, href: '/backoffice/stations', ownerOnly: true },
+            { name: 'สุขภาพระบบและสำรองข้อมูล', icon: Activity, href: '/backoffice/health', ownerOnly: true },
             { name: 'ข้อมูลและตั้งค่าสาขา', icon: Settings, href: '/backoffice/settings/branch' },
             { name: 'เป้ายอดขายรายเดือน', icon: Target, href: '/backoffice/settings/targets' },
             { name: 'สิทธิ์การใช้งานพนักงาน', icon: ShieldCheck, href: '/backoffice/settings/permissions' },
@@ -232,6 +270,12 @@ function logout() {
                                 :style="isActive(item.href) ? { color: stationColor } : {}"
                             />
                             <span class="truncate">{{ item.name }}</span>
+                            <span
+                                v-if="item.href === '/backoffice/health' && alertCount > 0"
+                                class="ms-auto shrink-0 rounded-full bg-[var(--status-critical)] px-1.5 py-0.5 text-[10px] font-bold leading-none text-white"
+                            >
+                                {{ alertCount }}
+                            </span>
                         </Link>
                     </div>
                 </div>
@@ -285,6 +329,22 @@ function logout() {
             </header>
 
             <main class="mx-auto w-full max-w-[1400px] space-y-4 p-3 sm:p-4 xl:p-6 2xl:max-w-[1600px]">
+                <!--
+                    แถบเตือนสุขภาพระบบ — ขึ้นทุกหน้าหลังบ้านจนกว่าจะแก้
+                    ตั้งใจให้กวนใจ เพราะของที่เตือนอยู่คือของที่เงียบจนถึงวันที่สายเกินไป
+                -->
+                <Link
+                    v-if="alertMessages.length"
+                    href="/backoffice/health"
+                    class="flex items-start gap-2.5 rounded-lg border border-[var(--status-critical)]/30 bg-[var(--status-critical)]/10 px-4 py-2.5 text-sm text-[var(--status-critical)] transition-colors hover:bg-[var(--status-critical)]/15"
+                >
+                    <Activity class="mt-0.5 size-4 shrink-0" />
+                    <span class="min-w-0 flex-1">
+                        <span v-for="(msg, i) in alertMessages" :key="i" class="block">{{ msg }}</span>
+                    </span>
+                    <span class="shrink-0 text-xs font-semibold underline">ดูรายละเอียด</span>
+                </Link>
+
                 <div
                     v-if="page.props.flash.success"
                     class="rounded-lg border border-[var(--status-good)]/30 bg-[var(--status-good)]/10 px-4 py-2 text-sm text-[var(--status-good)]"

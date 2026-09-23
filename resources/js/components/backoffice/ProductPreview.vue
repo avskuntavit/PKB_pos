@@ -18,7 +18,7 @@ import { CircleAlert, Layers, LoaderCircle, RotateCcw, ShoppingBag, SquareMenu }
 import ProductSheet from '@/components/guest/ProductSheet.vue'
 import CartLineBody from '@/components/storefront/CartLineBody.vue'
 import MenuRowPreview from '@/components/backoffice/MenuRowPreview.vue'
-import type { Product } from '@/types'
+import type { DietTag, Product } from '@/types'
 
 const props = defineProps<{
     /** null = กำลังเพิ่มเมนูใหม่ ยังไม่มี id ให้ดึงตัวเลือก */
@@ -30,6 +30,13 @@ const props = defineProps<{
     image: string | null
     promoLabel: string | null
     isActive: boolean
+    /**
+     * ป้ายที่กำลังติ๊กอยู่ในฟอร์ม ยังไม่ได้บันทึก
+     *
+     * ต้องรับเข้ามาทับ ไม่ใช่ปล่อยให้ใช้ของที่เซิร์ฟเวอร์ส่งมา ไม่งั้นตัวอย่าง
+     * จะโชว์ป้ายชุดเก่าระหว่างที่คนกำลังแก้ ซึ่งขัดกับเหตุผลที่มีตัวอย่างตั้งแต่แรก
+     */
+    dietTags?: DietTag[]
 }>()
 
 const loading = ref(false)
@@ -89,6 +96,7 @@ const previewProduct = computed<Product | null>(() => {
         price: priceNumber.value,
         image_path: props.image,
         promo_label: props.promoLabel,
+        diet_tags: props.dietTags ?? [],
     } as Product
 })
 

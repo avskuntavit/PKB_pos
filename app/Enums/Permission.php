@@ -43,8 +43,14 @@ enum Permission: string
     // เปิดสถานีใหม่และแก้ข้อมูลแบรนด์ของทุกสถานี — ไม่อยู่ในชุดตั้งต้นของผู้จัดการ
     // เพราะผู้จัดการดูแลสถานีของตัวเอง ไม่ใช่โครงสร้างของทั้งกิจการ
     case StationManage = 'station.manage';
+    // สุขภาพระบบ: การสำรองข้อมูล ข้อผิดพลาด และค่าตั้งค่าที่อันตราย
+    // เป็นเรื่องของทั้งระบบ ไม่ใช่ของสาขา จึงไม่อยู่ในชุดตั้งต้นของผู้จัดการเช่นกัน
+    case SystemHealth = 'system.health';
     case CashSettleVerify = 'cash.settle_verify';
     case BankReconcile = 'bank.reconcile';
+    // ปิดงวดบัญชี — ผู้จัดการปิดได้ แต่ "เปิดงวดที่ปิดแล้วกลับมา" เจ้าของระบบเท่านั้น
+    // (ด่านนั้นอยู่ใน PeriodLockService::reopen() ไม่ได้อยู่ที่สิทธิ์ตัวนี้)
+    case PeriodClose = 'period.close';
     case SalesExport = 'sales.export';
 
     public function label(): string
@@ -75,8 +81,10 @@ enum Permission: string
             self::StaffManage => 'จัดการพนักงานและสิทธิ์',
             self::BranchSettings => 'ตั้งค่าสาขา',
             self::StationManage => 'เปิดและจัดการสถานี',
+            self::SystemHealth => 'ดูสุขภาพระบบและสำรองข้อมูล',
             self::CashSettleVerify => 'ตรวจการนำส่งเงินกับธนาคาร',
             self::BankReconcile => 'กระทบยอดเงินกับธนาคาร',
+            self::PeriodClose => 'ปิดงวดบัญชี',
             self::SalesExport => 'ส่งข้อมูลการขายให้ระบบบัญชี',
         };
     }
@@ -112,6 +120,7 @@ enum Permission: string
             self::CashSettleVerify,
             // ผู้จัดการเป็นคนกระทบยอดกับสเตทเมนต์ตอนปิดเดือน
             self::BankReconcile,
+            self::PeriodClose,
             self::SalesExport,
             self::BackOfficeAccess,
             self::ReportSales,

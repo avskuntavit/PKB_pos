@@ -47,7 +47,19 @@ export interface PageProps {
     branches: Branch[]
     currentBranch: Branch | null
     flash: { success: string | null; error: string | null }
+    /** null = คนนี้ไม่มีสิทธิ์ดูสุขภาพระบบ จึงไม่ต้องขึ้นแถบเตือนให้ */
+    systemAlerts: SystemAlerts | null
     [key: string]: unknown
+}
+
+/** ตัวเลขสรุปบนแถบเตือนหลังบ้าน — รายละเอียดอยู่ที่หน้า /backoffice/health */
+export interface SystemAlerts {
+    /** จำนวนชนิดข้อมูลที่ขาดการสำรองเกินกำหนด */
+    backup_stale: number
+    /** จำนวนบั๊กที่ยังไม่มีใครปิด */
+    open_errors: number
+    /** ตัวตั้งเวลาเงียบไปนานผิดปกติ = งานอัตโนมัติทั้งหมดหยุด */
+    scheduler_down: boolean
 }
 
 export interface Option {

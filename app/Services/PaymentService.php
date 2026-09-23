@@ -37,6 +37,10 @@ class PaymentService
             throw new \DomainException('บิลนี้ถูกปิดไปแล้ว');
         }
 
+        // บิลเปิดค้างจากงวดที่ปิดบัญชีไปแล้ว รับเงินไม่ได้ ต้องเปิดงวดกลับก่อน
+        // (ปกติจะไม่มีบิลแบบนี้ เพราะปิดงวดทั้งที่ยังมีบิลเปิดค้างไม่ได้ตั้งแต่แรก)
+        app(PeriodLockService::class)->assertEditable($order);
+
         if ($order->activeItems()->count() === 0) {
             throw new \DomainException('บิลว่าง ไม่มีรายการให้ชำระเงิน');
         }
@@ -135,6 +139,12 @@ class PaymentService
 
     public function refund(Order $order, float $amount, string $method = 'cash', ?string $reason = null): Refund
     {
+        /*
+        | คืนเงินบิลของงวดที่ปิดแล้ว = ยอดขายของเดือนที่ยื่นภาษีไปแล้วเปลี่ยน
+        | ถ้าจำเป็นต้องคืนจริง ให้ออกรายการในงวดปัจจุบันแทน หรือให้เจ้าของเปิดงวดกลับ
+        */
+        app(PeriodLockService::class)->assertEditable($order);
+
         return DB::transaction(function () use ($order, $amount, $method, $reason) {
             $refund = Refund::create([
                 'order_id' => $order->id,

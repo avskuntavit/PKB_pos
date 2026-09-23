@@ -2,7 +2,9 @@
 
 namespace App\Http\Middleware;
 
+use App\Enums\Permission;
 use App\Models\Branch;
+use App\Services\SystemHealthService;
 use App\Support\CurrentBranch;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -62,6 +64,21 @@ class HandleInertiaRequests extends Middleware
                 'employee_status' => $c->employee_status?->value,
                 'is_verified_employee' => $c->isVerifiedEmployee(),
             ] : null,
+            /*
+            | แถบเตือนสุขภาพระบบ
+            |
+            | ── ทำไมต้องอยู่ในของที่ส่งไปทุกหน้า ─────────────────────────
+            | ถ้ามีแต่หน้า /backoffice/health คนจะเข้าไปดูก็ต่อเมื่อสงสัยอยู่แล้วว่ามีปัญหา
+            | ซึ่งไม่เคยเกิดขึ้น — การสำรองที่หยุดไปสามสัปดาห์จึงเงียบได้จนถึงวันที่ต้องกู้
+            | ตัวเลขชุดนี้ทำให้ "ไม่รู้" กลายเป็น "เห็นทุกครั้งที่เปิดหลังบ้าน"
+            |
+            | ส่งเฉพาะคนที่มีสิทธิ์เข้าหน้านั้น คนอื่นได้ null แล้วแถบไม่ขึ้นเลย
+            | และแคชไว้ 60 วินาทีในตัว SystemHealthService เพราะ closure ตรงนี้
+            | ถูกเรียกทุกครั้งที่โหลดหน้า ไม่ได้เรียกเฉพาะตอนที่ฝั่ง Vue ขอ
+            */
+            'systemAlerts' => fn () => $user?->can(Permission::SystemHealth)
+                ? app(SystemHealthService::class)->alerts()
+                : null,
             'flash' => [
                 'success' => fn () => $request->session()->get('success'),
                 'error' => fn () => $request->session()->get('error'),

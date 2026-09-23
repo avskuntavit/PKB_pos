@@ -75,6 +75,55 @@ enum DietTag: string
         );
     }
 
+    /** ป้ายชื่อกลุ่ม — ใช้บนหน้าจัดการเมนู */
+    public static function kindLabel(string $kind): string
+    {
+        return match ($kind) {
+            'heat' => 'ความเผ็ด',
+            'diet' => 'ประเภทอาหาร',
+            default => 'สิ่งที่ต้องระวัง',
+        };
+    }
+
+    /**
+     * คำอธิบายกลุ่มที่โชว์ให้คนตั้งค่าเห็น
+     *
+     * ข้อความของกลุ่ม allergen สำคัญที่สุด — เป็นข้อจำกัดที่เดิมเขียนไว้แต่ในคอมเมนต์
+     * ของไฟล์นี้ ซึ่งคนที่กำลังติ๊กช่องอยู่ไม่มีทางเห็น ที่ที่ควรอยู่คือตรงหน้าจอตอนติ๊ก
+     */
+    public static function kindHint(string $kind): string
+    {
+        return match ($kind) {
+            'heat' => 'ลูกค้าอยากรู้ก่อนสั่ง เพราะเป็นเรื่องที่เปลี่ยนใจง่ายที่สุด',
+            'diet' => 'คนถือศีลหรือกินเจใช้กรองทั้งเมนู ติ๊กผิดคือให้ข้อมูลผิด',
+            default => 'ร้านกรอกเอง ระบบไม่ได้ตรวจสูตรให้ — ไม่ควรใช้แทนการถามพนักงานสำหรับคนที่แพ้รุนแรง',
+        };
+    }
+
+    /**
+     * ป้ายทั้งหมดจัดเป็นกลุ่มตามที่ลูกค้าอ่าน — ใช้สร้างตัวเลือกบนหน้าจัดการเมนู
+     *
+     * @return array<int, array{kind: string, label: string, hint: string, tags: array<int, array{value: string, label: string}>}>
+     */
+    public static function grouped(): array
+    {
+        $groups = [];
+
+        foreach (self::cases() as $tag) {
+            $groups[$tag->kind()][] = ['value' => $tag->value, 'label' => $tag->label()];
+        }
+
+        return array_map(
+            fn (string $kind) => [
+                'kind' => $kind,
+                'label' => self::kindLabel($kind),
+                'hint' => self::kindHint($kind),
+                'tags' => $groups[$kind],
+            ],
+            array_keys($groups),
+        );
+    }
+
     /**
      * แปลงค่าที่เก็บไว้ให้เหลือเฉพาะป้ายที่ระบบรู้จัก
      *
