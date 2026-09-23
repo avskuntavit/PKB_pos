@@ -4,7 +4,7 @@ namespace App\Services;
 
 use App\Enums\OrderStatus;
 use App\Models\Branch;
-use App\Models\Ingredient;
+use App\Models\BranchStockItem;
 use App\Services\Concerns\SqlDateExpressions;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -283,28 +283,31 @@ class ExecutiveDashboardService
      */
     protected function purchasingWatch(array $branchIds, int $limit = 8): array
     {
-        $items = Ingredient::whereIn('branch_id', $branchIds)
-            ->where('is_active', true)
-            ->where('reorder_level', '>', 0)
-            ->whereColumn('stock_qty', '<=', 'reorder_level')
+        /*
+        | ยอดคงเหลืออยู่ที่ branch_stock_items แล้ว ส่วนชื่อกับหน่วยอยู่ที่แม่แบบกลาง
+        | จึงไล่จากฝั่งยอดแล้วลากแม่แบบมาด้วย ไม่ใช่กลับกัน —
+        | ของกลางชิ้นเดียวปรากฏได้หลายสาขา ถ้าไล่จากแม่แบบจะนับซ้ำ
+        |
+        | คิวรีดิบไม่มี join จึงอ้างชื่อคอลัมน์เปล่า ๆ ได้ ไม่ต้องกังวลเรื่อง prefix
+        */
+        $base = fn () => BranchStockItem::whereIn('branch_id', $branchIds)->low();
+
+        $items = $base()
+            ->with('stockItem:id,name,unit')
             ->orderByRaw('stock_qty / reorder_level')
             ->limit($limit)
             ->get();
 
         return [
-            'low_stock_count' => Ingredient::whereIn('branch_id', $branchIds)
-                ->where('is_active', true)
-                ->where('reorder_level', '>', 0)
-                ->whereColumn('stock_qty', '<=', 'reorder_level')
-                ->count(),
-            'items' => $items->map(fn (Ingredient $i) => [
-                'id' => $i->id,
-                'name' => $i->name,
-                'unit_label' => $i->unitLabel(),
-                'stock_qty' => (float) $i->stock_qty,
-                'reorder_level' => (float) $i->reorder_level,
-                'shortfall' => round(max(0, (float) $i->reorder_level - (float) $i->stock_qty), 3),
-                'is_out' => (float) $i->stock_qty <= 0,
+            'low_stock_count' => $base()->count(),
+            'items' => $items->map(fn (BranchStockItem $s) => [
+                'id' => $s->stock_item_id,
+                'name' => $s->stockItem?->name,
+                'unit_label' => $s->stockItem?->unitLabel(),
+                'stock_qty' => (float) $s->stock_qty,
+                'reorder_level' => (float) $s->reorder_level,
+                'shortfall' => round(max(0, (float) $s->reorder_level - (float) $s->stock_qty), 3),
+                'is_out' => (float) $s->stock_qty <= 0,
             ])->all(),
         ];
     }

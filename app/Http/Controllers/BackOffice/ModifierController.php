@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\BackOffice;
 
 use App\Http\Controllers\Controller;
-use App\Models\Ingredient;
+use App\Models\StockItem;
 use App\Models\Modifier;
 use App\Models\ModifierGroup;
 use App\Models\Product;
@@ -39,7 +39,7 @@ class ModifierController extends Controller
         $groups = ModifierGroup::query()
             ->forCatalog($branchId)
             ->with([
-                'modifiers.recipeItems' => fn ($q) => $q->where('branch_id', $branchId)->with('ingredient:id,name,unit'),
+                'modifiers.recipeItems' => fn ($q) => $q->where('branch_id', $branchId)->with('stockItem:id,name,unit'),
                 'products:id',
             ])
             ->orderBy('sort_order')
@@ -71,9 +71,9 @@ class ModifierController extends Controller
                     'is_active' => $m->is_active,
                     'marks_takeaway' => $m->marks_takeaway,
                     'recipe' => $m->recipeItems->map(fn ($r) => [
-                        'ingredient_id' => $r->ingredient_id,
-                        'name' => $r->ingredient?->name,
-                        'unit' => $r->ingredient?->unitLabel(),
+                        'stock_item_id' => $r->stock_item_id,
+                        'name' => $r->stockItem?->name,
+                        'unit' => $r->stockItem?->unitLabel(),
                         'qty' => (float) $r->qty,
                     ])->values(),
                 ])->values(),
@@ -90,11 +90,12 @@ class ModifierController extends Controller
                     'name' => $p->name,
                     'category_name' => $p->category?->name,
                 ]),
-            'ingredients' => Ingredient::where('branch_id', $branchId)
+            // ของที่สาขานี้ใช้ได้ = ของกลาง + ของเฉพาะสาขานี้
+            'stockItems' => StockItem::forCatalog($branchId)
                 ->where('is_active', true)
                 ->orderBy('name')
                 ->get(['id', 'name', 'unit'])
-                ->map(fn (Ingredient $i) => [
+                ->map(fn (StockItem $i) => [
                     'id' => $i->id,
                     'name' => $i->name,
                     'unit' => $i->unitLabel(),
@@ -213,36 +214,37 @@ class ModifierController extends Controller
         return back()->with('success', 'ลบตัวเลือกแล้ว');
     }
 
-    /** วัตถุดิบที่ตัวเลือกนี้เพิ่มเข้าไป */
+    /** ของในคลังที่ตัวเลือกนี้เพิ่มเข้าไป */
     public function saveRecipe(Request $request, Modifier $modifier, ActivityLogger $logger): RedirectResponse
     {
         $this->guardGroup($modifier->group, recipeOnly: true);
 
-        $usable = Ingredient::where('branch_id', CurrentBranch::id())->pluck('id')->all();
+        // ของกลางใช้ได้ทุกสาขา ส่วนของเฉพาะสาขาอื่นห้ามผูก
+        $usable = StockItem::forCatalog(CurrentBranch::id())->pluck('id')->all();
 
         $data = $request->validate([
             'items' => ['present', 'array', 'max:20'],
-            'items.*.ingredient_id' => ['required', Rule::in($usable)],
+            'items.*.stock_item_id' => ['required', Rule::in($usable)],
             'items.*.qty' => ['required', 'numeric', 'not_in:0'],
         ]);
 
         if ($data['items'] && $modifier->changesPortion()) {
-            return back()->with('error', 'ตัวเลือกนี้ตั้งตัวคูณขนาดไว้แล้ว ใส่วัตถุดิบเพิ่มไม่ได้ (จะคูณซ้อน)');
+            return back()->with('error', 'ตัวเลือกนี้ตั้งตัวคูณขนาดไว้แล้ว ใส่ของเพิ่มไม่ได้ (จะคูณซ้อน)');
         }
 
-        $ids = array_column($data['items'], 'ingredient_id');
+        $ids = array_column($data['items'], 'stock_item_id');
 
         if (count($ids) !== count(array_unique($ids))) {
-            return back()->with('error', 'มีวัตถุดิบซ้ำกัน — รวมเป็นบรรทัดเดียว');
+            return back()->with('error', 'มีของซ้ำกัน — รวมเป็นบรรทัดเดียว');
         }
 
         DB::transaction(function () use ($modifier, $data) {
-            // ลบเฉพาะสูตรของสาขานี้ — สาขาอื่นใส่วัตถุดิบของตัวเองไว้
+            // ลบเฉพาะสูตรของสาขานี้ — สาขาอื่นใส่ปริมาณของตัวเองไว้
             $modifier->recipeItems()->where('branch_id', CurrentBranch::id())->delete();
 
             foreach ($data['items'] as $row) {
                 $modifier->recipeItems()->create([
-                    'ingredient_id' => $row['ingredient_id'],
+                    'stock_item_id' => $row['stock_item_id'],
                     'qty' => $row['qty'],
                 ]);
             }
@@ -250,7 +252,7 @@ class ModifierController extends Controller
 
         $logger->log('modifier.item', $modifier, ['mode' => 'recipe', 'lines' => count($data['items'])]);
 
-        return back()->with('success', 'บันทึกวัตถุดิบของตัวเลือกแล้ว');
+        return back()->with('success', 'บันทึกของที่ตัวเลือกนี้ใช้แล้ว');
     }
 
     /* ---------- ตัวช่วย ---------- */

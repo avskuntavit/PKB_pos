@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\StoreType;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -14,6 +15,39 @@ class Branch extends Model
     use HasFactory, SoftDeletes;
 
     protected $guarded = [];
+
+    /*
+    | ค่าตั้งต้นให้ตรงกับ default ของคอลัมน์ใน migration
+    |
+    | เหตุผลเดียวกับ User — `Branch::create([...])` คืนอ็อบเจกต์ที่คอลัมน์ซึ่งไม่ได้ส่งมา
+    | เป็น null เพราะ default อยู่ที่ฐานข้อมูล ไม่ได้อยู่ที่โมเดล
+    |
+    | ผลที่เคยเจอ: `isTakingOnlineOrders()` = `is_active && is_accepting_online_orders && isOpenNow()`
+    | เจอ null ตัวแรกก็คืน false ทันที → "ตอนนี้ร้านปิดรับออเดอร์ออนไลน์" ทั้งที่ร้านเปิดอยู่
+    | และ `businessDateFor()` / `isOpenNow()` ก็ต้องมี timezone กับเวลาเปิด-ปิดจริง ๆ ถึงจะคิดถูก
+    |
+    | ถ้าเพิ่มคอลัมน์ที่มี default ใน migration ต้องมาเพิ่มที่นี่ด้วย
+    */
+    protected $attributes = [
+        'timezone' => 'Asia/Bangkok',
+        'currency' => 'THB',
+        'vat_rate' => 7.00,
+        'vat_included' => true,
+        'service_charge_rate' => 0,
+        'rounding_mode' => 0,
+        'business_day_start' => '05:00:00',
+        'is_accepting_online_orders' => true,
+        'open_time' => '09:00:00',
+        'close_time' => '21:00:00',
+        'prep_minutes' => 20,
+        'award_points_online' => true,
+        'qr_requires_open_table' => true,
+        'staff_benefit_enabled' => true,
+        'staff_benefit_monthly_cap' => 0,
+        'staff_benefit_exclude_alcohol' => true,
+        'restrict_alcohol_hours' => false,
+        'is_active' => true,
+    ];
 
     protected function casts(): array
     {
@@ -32,6 +66,11 @@ class Branch extends Model
             'staff_benefit_exclude_alcohol' => 'boolean',
             'restrict_alcohol_hours' => 'boolean',
             'alcohol_hours' => 'array',
+            'store_type' => StoreType::class,
+            // 7 ตำแหน่ง ละเอียดระดับ ~1 ซม. — cast เป็น string ของ decimal ไม่ใช่ float
+            // เพราะ float ทำให้พิกัดเพี้ยนท้าย ๆ ทศนิยมเวลาบันทึกกลับ
+            'latitude' => 'decimal:7',
+            'longitude' => 'decimal:7',
         ];
     }
 
@@ -80,6 +119,34 @@ class Branch extends Model
     public function reviews(): HasMany
     {
         return $this->hasMany(OrderReview::class);
+    }
+
+    /** รูปบรรยากาศร้าน เรียงตามลำดับที่เจ้าของจัดไว้ */
+    public function images(): HasMany
+    {
+        return $this->hasMany(BranchImage::class)->orderBy('sort_order')->orderBy('id');
+    }
+
+    public function zones(): HasMany
+    {
+        return $this->hasMany(Zone::class);
+    }
+
+    public function stockLevels(): HasMany
+    {
+        return $this->hasMany(BranchStockItem::class);
+    }
+
+    /** ชื่อประเภทร้านเป็นภาษาไทย — สถานีที่ยังไม่ได้เลือกประเภทคืน null */
+    public function storeTypeLabel(): ?string
+    {
+        return $this->store_type?->label();
+    }
+
+    /** มีหมุดบนแผนที่ครบทั้งสองค่าไหม — ครึ่งเดียวใช้ปักหมุดไม่ได้ */
+    public function hasCoordinates(): bool
+    {
+        return $this->latitude !== null && $this->longitude !== null;
     }
 
     /**

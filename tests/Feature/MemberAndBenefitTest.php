@@ -198,11 +198,15 @@ class MemberAndBenefitTest extends TestCase
 
     public function test_alcohol_is_excluded_from_the_benefit(): void
     {
-        $order = $this->placeOrder([['product_id' => $this->beer->id, 'qty' => 1]], $this->employee());
+        // สร้างพนักงานครั้งเดียวแล้วใช้ซ้ำ — employee() สร้างแถวใหม่ทุกครั้งที่เรียก
+        // เรียกสองรอบจะชน unique(branch_id, employee_code) แล้วเทสต์ล้มด้วยเหตุผลคนละเรื่อง
+        $customer = $this->employee();
+
+        $order = $this->placeOrder([['product_id' => $this->beer->id, 'qty' => 1]], $customer);
 
         $this->assertSame('0.00', $order->fresh()->staff_discount);
 
-        $preview = app(StaffBenefitService::class)->preview($order->fresh(), $this->employee());
+        $preview = app(StaffBenefitService::class)->preview($order->fresh(), $customer);
         $this->assertContains('เบียร์ขวดใหญ่', $preview['excluded']);
     }
 

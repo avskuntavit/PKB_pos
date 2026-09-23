@@ -1,0 +1,176 @@
+
+   WARN  Metadata found in doc-comment for method Tests\Unit\SalesTaxReportTest::test_reads_the_sequence_from_a_receipt_number(). Metadata in doc-comments is deprecated and will no longer be supported in PHPUnit 12. Update your test code to use attributes instead.
+
+   PASS  Tests\Unit\BankReconciliationTest
+  ✓ deducts fee because bank transfers the net amount                                                                                                                                           0.02s  
+  ✓ deducts refunds
+  ✓ cash uses the settlement amount not the cash sales
+  ✓ diff is actual minus expected
+  ✓ diff is zero while nobody has reconciled yet
+  ✓ hides channels with no activity
+  ✓ keeps a channel somebody already reconciled even at zero
+  ✓ channel order puts cash first
+  ✓ rounds to two decimals
+  ✓ totals across days
+
+   PASS  Tests\Unit\FileExportDriverTest
+  ✓ builds the normal path                                                                                                                                                                      0.04s  
+  ✓ trims slashes and normalises backslashes
+  ✓ a branch code cannot escape the folder
+  ✓ two thai branch codes do not overwrite each other
+  ✓ falls back when everything is stripped
+
+   PASS  Tests\Unit\MoneyTest
+  ✓ extracts vat from price that already includes it
+  ✓ adds vat on top of price
+  ✓ rounding modes
+  ✓ percent
+
+   PASS  Tests\Unit\PromptPayServiceTest
+  ✓ mobile number is converted to the promptpay format
+  ✓ national id uses its own tag
+  ✓ amount makes it a one time qr
+  ✓ checksum matches the payload
+  ✓ thai shop name is stripped to ascii
+  ✓ invalid promptpay id is rejected
+
+   PASS  Tests\Unit\SalesExportTest
+  ✓ cancelled bills stay in the payload but not in the sales total                                                                                                                              0.01s  
+  ✓ payment channels count money that actually moved
+  ✓ channel fee is deducted from net
+  ✓ channel order is stable
+  ✓ a day with no bills
+
+   PASS  Tests\Unit\SalesTaxReportTest
+  ✓ finds the gap in the middle                                                                                                                                                                 0.01s  
+  ✓ numbering always starts at one
+  ✓ no gap when continuous
+  ✓ empty set has no gap
+  ✓ ignores duplicates and unordered input
+  ✓ ignores numbers below one
+  ✓ pads to four digits
+  ✓ reads the sequence from a receipt number with data set "รูปแบบปกติ"
+  ✓ reads the sequence from a receipt number with data set "เลขแรกของวัน"
+  ✓ reads the sequence from a receipt number with data set "ลำดับห้าหลัก"
+  ✓ reads the sequence from a receipt number with data set "ไม่มีเลขที่ใบเสร็จ"
+  ✓ reads the sequence from a receipt number with data set "รูปแบบของระบบเก่า"
+  ✓ reads the sequence from a receipt number with data set "ไม่มีตัวนำหน้า r"
+  ✓ reads the sequence from a receipt number with data set "ลำดับสั้นเกินไป"
+  ✓ reads the sequence from a receipt number with data set "ข้อความว่าง"
+
+   PASS  Tests\Feature\BranchIsolationTest
+  ✓ pos terminal refuses a bill from another branch                                                                                                                                             1.35s  
+  ✓ pos terminal still opens a bill from its own branch                                                                                                                                         0.55s  
+  ✓ pos terminal opens with no bill selected                                                                                                                                                    0.36s  
+  ✓ printing a receipt from another branch is refused                                                                                                                                           0.36s  
+  ✓ moving another branchs bill to a table is refused                                                                                                                                           0.32s  
+  ✓ back office sale detail refuses another branch                                                                                                                                              0.32s  
+  ✓ undoing another branchs bank reconciliation is refused                                                                                                                                      0.32s  
+  ✓ asking for a branch you cannot access is refused                                                                                                                                            0.31s  
+  ✓ a cashier can reach only their own branch                                                                                                                                                   0.31s  
+  ✓ an owner can reach every active branch                                                                                                                                                      0.31s  
+  ✓ a product of another branch is not sellable here                                                                                                                                            0.04s  
+  ✓ a central product is sellable at every branch                                                                                                                                               0.03s  
+
+   PASS  Tests\Feature\CentralStockTest
+  ✓ a central item is usable at every branch                                                                                                                                                    0.04s  
+  ✓ an item that belongs to one branch is not visible at another                                                                                                                                0.03s  
+  ✓ two central items cannot share a code                                                                                                                                                       0.03s  
+  ✓ a branch item may reuse a central code                                                                                                                                                      0.03s  
+  ✓ stock is separate per branch                                                                                                                                                                0.04s  
+  ✓ selling deducts only the branch that sold it                                                                                                                                                0.03s  
+  ✓ weighted average cost is separate per branch                                                                                                                                                0.03s  
+  ✓ the first movement creates the branch row by itself                                                                                                                                         0.03s  
+  ✓ receiving in purchase units converts to base units                                                                                                                                          0.03s  
+  ✓ a movement records the branch it was told not the items branch                                                                                                                              0.03s  
+  ✓ the recipe of one branch does not leak into another                                                                                                                                         0.03s  
+  ✓ unit cost uses the cost of the branch that is selling                                                                                                                                       0.04s  
+  ✓ items that do not scale with portion stay at one                                                                                                                                            0.02s  
+
+   PASS  Tests\Feature\MemberAndBenefitTest
+  ✓ otp login creates the member on first verification                                                                                                                                          1.18s  
+  ✓ a wrong code counts attempts and locks after the limit                                                                                                                                      2.30s  
+  ✓ requesting a new code too soon is blocked                                                                                                                                                   0.69s  
+  ✓ hr must approve before the staff price applies                                                                                                                                              0.45s  
+  ✓ approved employee gets the staff price                                                                                                                                                      0.62s  
+  ✓ alcohol is excluded from the benefit                                                                                                                                                        0.43s  
+  ✓ the monthly cap limits the discount                                                                                                                                                         0.37s  
+  ✓ the cap counts usage already recorded this month                                                                                                                                            1.88s  
+  ✓ paying records the benefit for the company to reimburse                                                                                                                                     1.91s  
+  ✓ a disabled payment method is refused by the server                                                                                                                                          0.94s  
+  ✓ queue numbers run per day and only after the shop accepts                                                                                                                                   1.22s  
+  ✓ role defaults and per user overrides                                                                                                                                                        1.36s  
+  ✓ an inactive account loses every permission                                                                                                                                                  0.82s  
+
+   PASS  Tests\Feature\OnlineOrderFlowTest
+  ✓ a guest can order from the storefront without logging in                                                                                                                                    0.92s  
+  ✓ the phone number links the order to a customer record                                                                                                                                       1.24s  
+  ✓ accepting sends the order to the kitchen                                                                                                                                                    1.08s  
+  ✓ rejecting voids the bill and keeps the reason for the customer                                                                                                                              1.04s  
+  ✓ a customer can cancel only before the shop accepts                                                                                                                                          1.35s  
+  ✓ staff orders skip approval and go straight to the kitchen                                                                                                                                   0.75s  
+  ✓ staff can order even when the shop is closed to online orders                                                                                                                               0.75s  
+  ✓ paying completes the online order and awards points                                                                                                                                         1.76s  
+  ✓ points can be switched off for online orders                                                                                                                                                0.68s  
+  ✓ a government scheme is recorded as an intent only                                                                                                                                           0.55s  
+  ✓ the tracking page is reachable only with the token                                                                                                                                          0.56s  
+  ✓ a government scheme bill is settled by staff as a split payment                                                                                                                             0.54s  
+  ✓ the payment intent never settles the bill by itself                                                                                                                                         1.39s  
+  ✓ it refuses menu items from another branch                                                                                                                                                   2.07s  
+
+   PASS  Tests\Feature\OrderFlowTest
+  ✓ it totals a bill with vat included                                                                                                                                                          0.65s  
+  ✓ paying closes the bill and records change                                                                                                                                                   0.35s  
+  ✓ it refuses to pay less than the bill total                                                                                                                                                  0.34s  
+
+   PASS  Tests\Feature\SelfOrderFlowTest
+  ✓ every table gets a unique qr token                                                                                                                                                          0.40s  
+  ✓ guest can order without logging in                                                                                                                                                          0.69s  
+  ✓ customer items do not reach the kitchen before approval                                                                                                                                     0.49s  
+  ✓ approval sends items to the kitchen                                                                                                                                                         0.39s  
+  ✓ rejected items are voided and removed from the bill                                                                                                                                         0.37s  
+  ✓ bill cannot be paid while items await approval                                                                                                                                              0.34s  
+  ✓ paying closes the table session so the qr stops accepting orders                                                                                                                            0.38s  
+  ✓ scanning after payment opens a fresh session                                                                                                                                                0.32s  
+  ✓ kitchen ticket moves through its stages                                                                                                                                                     0.42s  
+  ✓ duplicate service calls are merged                                                                                                                                                          0.41s  
+  ✓ guest cannot order a product from another branch                                                                                                                                            0.57s  
+
+   PASS  Tests\Feature\StationManagementTest
+  ✓ owner can open the stations page                                                                                                                                                            0.39s  
+  ✓ a manager cannot open the stations page                                                                                                                                                     0.44s  
+  ✓ a manager cannot open a new station                                                                                                                                                         0.42s  
+  ✓ owner opens a station without copying anything                                                                                                                                              0.34s  
+  ✓ a station code with thai letters or spaces is refused                                                                                                                                       0.34s  
+  ✓ a duplicate station code is refused                                                                                                                                                         0.32s  
+  ✓ recipes and costs follow the new station but stock starts at zero                                                                                                                           0.34s  
+  ✓ things that belong only to the source station are not copied                                                                                                                                0.34s  
+  ✓ copied tables get brand new qr tokens                                                                                                                                                       0.37s  
+  ✓ the last active station cannot be switched off                                                                                                                                              0.46s  
+  ✓ a station with open bills cannot be switched off                                                                                                                                            0.65s  
+  ✓ switching off the station you are viewing moves you somewhere else                                                                                                                          0.45s  
+  ✓ an owner whose home station was switched off can still use the back office                                                                                                                  0.36s  
+  ✓ a switched off station can be switched back on                                                                                                                                              0.32s  
+  ✓ the station code cannot be changed after it is created                                                                                                                                      0.59s  
+  ✓ coordinates outside the map are refused                                                                                                                                                     0.34s  
+  ✓ owner adds and removes a gallery image                                                                                                                                                      0.50s  
+  ✓ an image cannot be deleted through another station                                                                                                                                          0.41s  
+  ✓ reordering only touches images of that station                                                                                                                                              0.36s  
+
+   PASS  Tests\Feature\StockTransferTest
+  ✓ a manager can open the transfers page                                                                                                                                                       0.39s  
+  ✓ a waiter cannot open the transfers page                                                                                                                                                     0.46s  
+  ✓ sending takes stock out of the source and leaves the destination alone                                                                                                                      0.42s  
+  ✓ sending more than the branch has is refused                                                                                                                                                 0.42s  
+  ✓ a station specific stock item cannot be transferred                                                                                                                                         0.36s  
+  ✓ receiving adds stock at the destination with a weighted average cost                                                                                                                        0.85s  
+  ✓ receiving less than was sent records the shortfall without inventing stock                                                                                                                  0.68s  
+  ✓ a transfer cannot be received twice                                                                                                                                                         0.96s  
+  ✓ cancelling puts the stock back at the source                                                                                                                                                0.82s  
+  ✓ only the destination can receive                                                                                                                                                            0.45s  
+  ✓ only the source can cancel                                                                                                                                                                  0.64s  
+  ✓ an owner can act for both stations                                                                                                                                                          0.44s  
+
+  Tests:    142 passed (348 assertions)
+  Duration: 55.36s
+

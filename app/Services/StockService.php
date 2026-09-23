@@ -3,48 +3,52 @@
 namespace App\Services;
 
 use App\Enums\StockMovementType;
-use App\Models\Ingredient;
+use App\Models\BranchStockItem;
 use App\Models\Modifier;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
+use App\Models\StockItem;
 use App\Models\StockMovement;
 use App\Support\CurrentBranch;
 use App\Support\Money;
 use Illuminate\Support\Facades\DB;
 
+/**
+ * ตัดสต๊อก รับของ และคิดต้นทุนตามสูตร
+ *
+ * ── ของเป็นกลาง แต่สต๊อกแยกสาขา ────────────────────────────
+ * `stock_items` เป็นแม่แบบกลาง (ชื่อ หน่วย หน่วยซื้อ)
+ * `branch_stock_items` เก็บยอดคงเหลือ ต้นทุนเฉลี่ย และจุดสั่งซื้อรายสาขา
+ *
+ * ทุกเมธอดที่แตะตัวเลขจึงต้อง **ระบุสาขามาเสมอ** เมื่อก่อนอ่านจาก
+ * `$ingredient->branch_id` ได้เพราะวัตถุดิบผูกสาขาอยู่แล้ว ตอนนี้อ่านไม่ได้แล้ว
+ * และการเดาเอาจาก CurrentBranch ในชั้นนี้อันตราย เพราะงานที่รันจาก
+ * ตัวตั้งเวลาไม่มี CurrentBranch
+ */
 class StockService
 {
     /**
-     * ตัดสต๊อกวัตถุดิบตามสูตรอาหารเมื่อปิดบิล
+     * ตัดสต๊อกตามสูตรอาหารเมื่อปิดบิล
      *
-     * วิธีคิดปริมาณของแต่ละบรรทัดในบิล:
-     *   ตัวคูณขนาด = ผลคูณของ portion_multiplier ของตัวเลือกที่ลูกค้าเลือก
-     *                (ธรรมดา 1.00 / พิเศษ 1.50 / จัมโบ้ 2.00)
-     *
-     *   จากสูตรฐาน  : qty × (ถ้า scales_with_portion ให้คูณตัวคูณขนาด) × จำนวนที่สั่ง
-     *   จากตัวเลือก : qty × (ถ้า scales_with_portion ให้คูณตัวคูณขนาด) × จำนวนที่สั่ง
-     *
-     * ของที่ไม่โตตามขนาดจาน (ถุงพลาสติก หลอด) ให้ตั้ง scales_with_portion = false
-     *
-     * รวมยอดทั้งบิลก่อนแล้วค่อยบันทึกทีเดียวต่อวัตถุดิบหนึ่งตัว
+     * รวมยอดทั้งบิลก่อนแล้วค่อยบันทึกทีเดียวต่อของหนึ่งชิ้น
      * ไม่งั้นบิลเดียวจะได้ stock_movements เป็นสิบแถว อ่านรายงานไม่รู้เรื่อง
      */
     public function deductForOrder(Order $order): void
     {
         $order->loadMissing([
-            'activeItems.product.recipeItems.ingredient',
-            'activeItems.modifiers.modifier.recipeItems.ingredient',
+            'activeItems.product.recipeItems',
+            'activeItems.modifiers.modifier.recipeItems',
         ]);
 
-        /** @var array<int, float> $totals  ingredient_id => จำนวนที่ใช้ */
+        /** @var array<int, float> $totals  stock_item_id => จำนวนที่ใช้ */
         $totals = [];
 
         $branchId = (int) $order->branch_id;
 
         foreach ($order->activeItems as $item) {
-            foreach ($this->usageForItem($item, $branchId) as $ingredientId => $qty) {
-                $totals[$ingredientId] = ($totals[$ingredientId] ?? 0) + $qty;
+            foreach ($this->usageForItem($item, $branchId) as $stockItemId => $qty) {
+                $totals[$stockItemId] = ($totals[$stockItemId] ?? 0) + $qty;
             }
         }
 
@@ -52,15 +56,16 @@ class StockService
             return;
         }
 
-        $ingredients = Ingredient::whereIn('id', array_keys($totals))->get()->keyBy('id');
+        $items = StockItem::whereIn('id', array_keys($totals))->get()->keyBy('id');
 
-        foreach ($totals as $ingredientId => $qty) {
-            if (! $ingredient = $ingredients->get($ingredientId)) {
+        foreach ($totals as $stockItemId => $qty) {
+            if (! $stockItem = $items->get($stockItemId)) {
                 continue;
             }
 
             $this->move(
-                $ingredient,
+                $stockItem,
+                $branchId,
                 StockMovementType::Usage,
                 -1 * round($qty, 4),
                 reference: $order,
@@ -70,53 +75,89 @@ class StockService
     }
 
     /**
-     * วัตถุดิบที่บรรทัดหนึ่งในบิลใช้ไป
+     * ของที่บรรทัดหนึ่งในบิลใช้ไป
      *
-     * สูตรแยกรายสาขา จึงต้องบอกด้วยว่าคิดของสาขาไหน — กรองในหน่วยความจำ
-     * เพราะ relation ถูก eager load มาทั้งก้อนแล้วตอน deductForOrder
-     *
-     * @return array<int, float>  ingredient_id => จำนวน
+     * @return array<int, float>  stock_item_id => จำนวน
      */
     public function usageForItem(OrderItem $item, ?int $branchId = null): array
     {
         $product = $item->product;
         $branchId ??= (int) $item->order?->branch_id;
 
-        if (! $product || ! $product->track_stock) {
+        if (! $product) {
             return [];
         }
 
-        $qtyOrdered = (float) $item->qty;
-        $multiplier = $this->portionMultiplier($item);
+        $modifiers = $item->modifiers
+            ->map(fn ($chosen) => $chosen->modifier)
+            // ตัวเลือกถูกลบไปแล้ว — บิลเก่ายังอ่านชื่อจาก snapshot ได้ แต่ไล่สูตรต่อไม่ได้
+            ->filter();
+
+        return $this->usageFor($product, $modifiers, (int) $branchId, (float) $item->qty);
+    }
+
+    /**
+     * ของที่ใช้ไป เมื่อขายเมนูหนึ่งพร้อมตัวเลือกชุดหนึ่ง
+     *
+     * ── ทำไมแยกออกมาเป็นเมธอดกลาง ─────────────────────────
+     * เดิมการตัดสต๊อกกับการคิดต้นทุนเขียนสูตรเดียวกันไว้คนละที่ พร้อมคอมเมนต์เตือนว่า
+     * "ต้องคิดเหมือนกันเป๊ะ ๆ" ซึ่งแปลว่าวันหนึ่งจะไม่เหมือนกัน
+     * ตอนนี้ทั้งสองเรียกเมธอดนี้ตัวเดียว หลุดจากกันไม่ได้แล้ว
+     *
+     * ── วิธีคิด ───────────────────────────────────────────
+     *   ตัวคูณขนาด = ผลคูณของ portion_multiplier ของตัวเลือกที่เลือก
+     *                (ธรรมดา 1.00 / พิเศษ 1.50 / จัมโบ้ 2.00)
+     *
+     *   จากสูตรฐาน  : qty × (ถ้า scales_with_portion ให้คูณตัวคูณขนาด) × จำนวนที่สั่ง
+     *   จากตัวเลือก : qty × (ถ้า scales_with_portion ให้คูณตัวคูณขนาด) × จำนวนที่สั่ง
+     *
+     * ของที่ไม่โตตามขนาดจาน (ถุงพลาสติก หลอด) ให้ตั้ง scales_with_portion = false
+     *
+     * สูตรแยกรายสาขา จึงกรอง branch_id ในหน่วยความจำ เพราะ relation
+     * ถูก eager load มาทั้งก้อนแล้วตอน deductForOrder
+     *
+     * @param  iterable<Modifier>  $modifiers
+     * @return array<int, float>  stock_item_id => จำนวน
+     */
+    public function usageFor(Product $product, iterable $modifiers, int $branchId, float $qtyOrdered = 1.0): array
+    {
+        if (! $product->track_stock) {
+            return [];
+        }
+
+        $product->loadMissing('recipeItems');
+
+        $multiplier = 1.0;
+
+        foreach ($modifiers as $modifier) {
+            $multiplier *= (float) $modifier->portion_multiplier;
+        }
+
+        $multiplier = $multiplier > 0 ? $multiplier : 1.0;
         $usage = [];
 
         // สูตรฐาน
         foreach ($product->recipeItems->where('branch_id', $branchId) as $recipe) {
-            if (! $recipe->ingredient_id) {
+            if (! $recipe->stock_item_id) {
                 continue;
             }
 
             $factor = $recipe->scales_with_portion ? $multiplier : 1.0;
-            $usage[$recipe->ingredient_id] = ($usage[$recipe->ingredient_id] ?? 0)
+            $usage[$recipe->stock_item_id] = ($usage[$recipe->stock_item_id] ?? 0)
                 + ((float) $recipe->qty * $factor * $qtyOrdered);
         }
 
         // ส่วนที่ตัวเลือกเพิ่ม/ลด
-        foreach ($item->modifiers as $chosen) {
-            $modifier = $chosen->modifier;
-
-            if (! $modifier) {
-                continue;   // ตัวเลือกถูกลบไปแล้ว — บิลเก่ายังอ่านชื่อจาก snapshot ได้
-            }
-
+        foreach ($modifiers as $modifier) {
+            $modifier->loadMissing('recipeItems');
             $factor = $modifier->scales_with_portion ? $multiplier : 1.0;
 
             foreach ($modifier->recipeItems->where('branch_id', $branchId) as $extra) {
-                if (! $extra->ingredient_id) {
+                if (! $extra->stock_item_id) {
                     continue;
                 }
 
-                $usage[$extra->ingredient_id] = ($usage[$extra->ingredient_id] ?? 0)
+                $usage[$extra->stock_item_id] = ($usage[$extra->stock_item_id] ?? 0)
                     + ((float) $extra->qty * $factor * $qtyOrdered);
             }
         }
@@ -139,39 +180,33 @@ class StockService
     }
 
     /**
-     * ต้นทุนวัตถุดิบต่อ 1 จาน ตามตัวเลือกที่ลูกค้าเลือก
+     * ต้นทุนของต่อ 1 จาน ตามตัวเลือกที่ลูกค้าเลือก
      *
-     * คิดแบบเดียวกับ usageForItem() เป๊ะ ๆ จะได้ไม่มีวันหลุดจากกัน
      * ใช้ตอน snapshot ต้นทุนลงบิล เพื่อให้จัมโบ้เนื้อวัวมีต้นทุนสูงกว่าธรรมดาหมูจริง
+     * ต้นทุนเป็นของรายสาขา จึงอ่านจาก branch_stock_items ของสาขานั้น —
+     * ของชิ้นเดียวกันคนละสาขาซื้อมาคนละราคาเป็นเรื่องปกติ
      *
      * @param  iterable<Modifier>  $modifiers  ตัวเลือกที่เลือก
      */
     public function unitCostForSelection(Product $product, iterable $modifiers, ?int $branchId = null): float
     {
-        $branchId ??= CurrentBranch::id();
-        $product->loadMissing('recipeItems.ingredient');
+        $branchId = (int) ($branchId ?? CurrentBranch::id());
 
-        $multiplier = 1.0;
+        $usage = $this->usageFor($product, $modifiers, $branchId);
 
-        foreach ($modifiers as $modifier) {
-            $multiplier *= (float) $modifier->portion_multiplier;
+        if (! $usage) {
+            return 0.0;
         }
 
-        $multiplier = $multiplier > 0 ? $multiplier : 1.0;
+        // คิวรีเดียวจบ ไม่ไล่ถามต้นทุนทีละชิ้น
+        $costs = BranchStockItem::where('branch_id', $branchId)
+            ->whereIn('stock_item_id', array_keys($usage))
+            ->pluck('cost_per_unit', 'stock_item_id');
+
         $total = 0.0;
 
-        foreach ($product->recipeItems->where('branch_id', $branchId) as $recipe) {
-            $factor = $recipe->scales_with_portion ? $multiplier : 1.0;
-            $total += (float) $recipe->qty * $factor * (float) ($recipe->ingredient?->cost_per_unit ?? 0);
-        }
-
-        foreach ($modifiers as $modifier) {
-            $modifier->loadMissing('recipeItems.ingredient');
-            $factor = $modifier->scales_with_portion ? $multiplier : 1.0;
-
-            foreach ($modifier->recipeItems->where('branch_id', $branchId) as $extra) {
-                $total += (float) $extra->qty * $factor * (float) ($extra->ingredient?->cost_per_unit ?? 0);
-            }
+        foreach ($usage as $stockItemId => $qty) {
+            $total += $qty * (float) ($costs[$stockItemId] ?? 0);
         }
 
         return round($total, 2);
@@ -184,54 +219,71 @@ class StockService
      * ระบบหารให้เองด้วย purchase_factor จะได้ไม่ต้องคิดเลขหน้างาน
      */
     public function receive(
-        Ingredient $ingredient,
+        StockItem $item,
+        int $branchId,
         float $purchaseQty,
         ?float $costPerPurchaseUnit = null,
         ?string $note = null,
     ): StockMovement {
-        $factor = $ingredient->purchaseFactor();
+        $factor = $item->purchaseFactor();
 
         return $this->move(
-            $ingredient,
+            $item,
+            $branchId,
             StockMovementType::Purchase,
-            $ingredient->toBaseQty($purchaseQty),
+            $item->toBaseQty($purchaseQty),
             $costPerPurchaseUnit !== null ? round($costPerPurchaseUnit / $factor, 4) : null,
             note: $note,
         );
     }
 
-    /** บันทึกความเคลื่อนไหวสต๊อก 1 รายการ แล้วอัปเดตยอดคงเหลือ */
+    /**
+     * บันทึกความเคลื่อนไหวสต๊อก 1 รายการ แล้วอัปเดตยอดคงเหลือของสาขานั้น
+     *
+     * ล็อกแถวของสาขาก่อนแก้เสมอ ไม่งั้นสองบิลที่ปิดพร้อมกันจะอ่านยอดเดิมทั้งคู่
+     * แล้วเขียนทับกัน — ของหายไปหนึ่งก้อนโดยไม่มีใครรู้
+     */
     public function move(
-        Ingredient $ingredient,
+        StockItem $item,
+        int $branchId,
         StockMovementType $type,
         float $qty,
         ?float $unitCost = null,
         $reference = null,
         ?string $note = null,
     ): StockMovement {
-        return DB::transaction(function () use ($ingredient, $type, $qty, $unitCost, $reference, $note) {
-            $ingredient->refresh();
+        return DB::transaction(function () use ($item, $branchId, $type, $qty, $unitCost, $reference, $note) {
+            $stock = $this->lockStock($item, $branchId);
 
-            $unitCost ??= (float) $ingredient->cost_per_unit;
+            $unitCost ??= (float) $stock->cost_per_unit;
             // ปัดตามความละเอียดของคอลัมน์ ไม่ใช่ทศนิยม 2 ตำแหน่งแบบเงิน
             // ของที่นับเป็นกรัมจะเสียเศษทันทีถ้าปัดแค่ 2 ตำแหน่ง
-            $balance = round((float) $ingredient->stock_qty + $qty, 3);
+            $balance = round((float) $stock->stock_qty + $qty, 3);
 
-            // รับของเข้า -> ปรับต้นทุนเฉลี่ยถ่วงน้ำหนัก
-            if ($qty > 0 && $type === StockMovementType::Purchase) {
-                $oldValue = (float) $ingredient->stock_qty * (float) $ingredient->cost_per_unit;
+            /*
+            | ของเข้า -> ปรับต้นทุนเฉลี่ยถ่วงน้ำหนักของสาขานี้
+            |
+            | นับทั้งการซื้อเข้าและการรับโอนจากสถานีอื่น เพราะของที่โอนมาพกต้นทุน
+            | ของต้นทางมาด้วย ซึ่งมักไม่เท่าต้นทุนที่ปลายทางมีอยู่
+            | ถ้าไม่คิดถ่วงน้ำหนักตรงนี้ ต้นทุนปลายทางจะค้างที่ค่าเดิมแบบเงียบ ๆ
+            | แล้วรายงานกำไรของปลายทางจะผิดไปทุกจานที่ใช้ของชิ้นนั้น
+            |
+            | ส่วน adjust / waste ไม่แตะต้นทุน — เป็นการแก้จำนวน ไม่ใช่การซื้อของเข้ามาใหม่
+            */
+            if ($qty > 0 && in_array($type, [StockMovementType::Purchase, StockMovementType::TransferIn], true)) {
+                $oldValue = (float) $stock->stock_qty * (float) $stock->cost_per_unit;
                 $newValue = $qty * $unitCost;
-                $ingredient->cost_per_unit = $balance > 0
+                $stock->cost_per_unit = $balance > 0
                     ? round(($oldValue + $newValue) / $balance, 4)
                     : $unitCost;
             }
 
-            $ingredient->stock_qty = $balance;
-            $ingredient->save();
+            $stock->stock_qty = $balance;
+            $stock->save();
 
             return StockMovement::create([
-                'branch_id' => $ingredient->branch_id,
-                'ingredient_id' => $ingredient->id,
+                'branch_id' => $branchId,
+                'stock_item_id' => $item->id,
                 'type' => $type,
                 'qty' => round($qty, 3),
                 // cost เป็นเงิน จึงปัด 2 ตำแหน่งตามปกติ
@@ -245,5 +297,25 @@ class StockService
                 'occurred_at' => now(),
             ]);
         });
+    }
+
+    /**
+     * แถวสต๊อกของสาขา พร้อมล็อกไว้แก้
+     *
+     * สาขาที่แตะของชิ้นนี้ครั้งแรกยังไม่มีแถว จึงสร้างให้ก่อน
+     * firstOrCreate ของ Laravel จับ unique ที่ชนกันแล้วอ่านใหม่ให้เอง
+     * จึงปลอดภัยแม้สองคนกดพร้อมกัน
+     */
+    protected function lockStock(StockItem $item, int $branchId): BranchStockItem
+    {
+        BranchStockItem::firstOrCreate([
+            'branch_id' => $branchId,
+            'stock_item_id' => $item->id,
+        ]);
+
+        return BranchStockItem::where('branch_id', $branchId)
+            ->where('stock_item_id', $item->id)
+            ->lockForUpdate()
+            ->firstOrFail();
     }
 }

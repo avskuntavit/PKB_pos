@@ -51,6 +51,16 @@ class ImageService
             'store_width' => 512,
             'max_kb' => 2048,
         ],
+        // รูปบรรยากาศร้าน — มีได้หลายใบต่อสถานี เก็บที่ตาราง branch_images
+        'gallery' => [
+            'dir' => 'branches',
+            'label' => 'รูปบรรยากาศร้าน',
+            'width' => 1600,
+            'height' => 1200,
+            'ratio' => '4:3',
+            'store_width' => 1600,
+            'max_kb' => 4096,
+        ],
     ];
 
     protected const QUALITY = 82;
@@ -77,10 +87,20 @@ class ImageService
         ];
     }
 
-    /** กฎ validate ของช่องอัปโหลด ให้ตรงกับสเปกเดียวกัน */
-    public static function rules(string $preset): array
+    /**
+     * กฎ validate ของช่องอัปโหลด ให้ตรงกับสเปกเดียวกัน
+     *
+     * ค่าเริ่มต้นเป็น nullable เพราะช่องอัปโหลดส่วนใหญ่เป็นการ "เปลี่ยนรูปเดิม"
+     * ที่ไม่ส่งไฟล์มาก็แปลว่าไม่เปลี่ยน ส่วน required ใช้กับช่องที่ตั้งใจเพิ่มรูปใหม่จริง ๆ
+     */
+    public static function rules(string $preset, bool $required = false): array
     {
-        return ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:'.self::PRESETS[$preset]['max_kb']];
+        return [
+            $required ? 'required' : 'nullable',
+            'image',
+            'mimes:jpg,jpeg,png,webp',
+            'max:'.self::PRESETS[$preset]['max_kb'],
+        ];
     }
 
     /**

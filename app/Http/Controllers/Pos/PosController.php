@@ -99,6 +99,18 @@ class PosController extends Controller
     {
         $branch = CurrentBranch::getOrFail();
 
+        /*
+        | บิลที่ส่งมาทาง URL ต้องเป็นของสาขาที่กำลังเปิดอยู่เท่านั้น
+        |
+        | ทุก endpoint ที่ "แก้" บิลเช็คข้อนี้อยู่แล้ว แต่หน้านี้เป็นหน้า "อ่าน"
+        | และเดิมไม่เช็คเลย — พิมพ์ id ของสาขาอื่นใน URL ก็เห็นรายการอาหาร
+        | ยอดเงิน และชื่อลูกค้าของอีกสาขาได้
+        |
+        | ใช้ $order?->exists เพราะ route เป็น {order?} เมื่อไม่ส่ง id มา
+        | Laravel จะยัด model เปล่ามาให้ ไม่ใช่ null
+        */
+        abort_unless(! $order?->exists || $order->branch_id === $branch->id, 403);
+
         $categories = Category::forCatalog($branch->id)
             ->active()
             ->orderBy('sort_order')

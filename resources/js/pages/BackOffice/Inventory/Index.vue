@@ -23,7 +23,7 @@ interface UnitOption extends Option {
     suggested_purchase_factor: number
 }
 
-interface IngredientRow {
+interface StockItemRow {
     id: number
     code: string | null
     name: string
@@ -38,6 +38,12 @@ interface IngredientRow {
     cost_per_unit: number
     reorder_level: number
     stock_value: number
+    /** ของกลาง — ทุกสาขาใช้ร่วมกัน */
+    is_central: boolean
+    /** สาขานี้เปิดใช้ของชิ้นนี้ไหม */
+    used_here: boolean
+    /** แก้ชื่อ/หน่วยของแม่แบบได้ไหม (ของกลางแก้ได้เฉพาะเจ้าของระบบ) */
+    can_edit_master: boolean
     is_low: boolean
     is_active: boolean
     in_use: number
@@ -45,8 +51,8 @@ interface IngredientRow {
 
 interface MovementRow {
     id: number
-    ingredient_id: number
-    ingredient: {
+    stock_item_id: number
+    stock_item: {
         id: number
         name: string
         unit: string
@@ -64,10 +70,11 @@ interface MovementRow {
 }
 
 const props = defineProps<{
-    ingredients: Paginated<IngredientRow>
+    stockItems: Paginated<StockItemRow>
     movements: MovementRow[]
     movementTypes: Option[]
     units: UnitOption[]
+    canEditCentral: boolean
     filters: Record<string, any>
 }>()
 
@@ -93,7 +100,7 @@ function movementBadgeVariant(type: string): 'default' | 'secondary' | 'outline'
 const showModal = ref(false)
 
 const form = useForm({
-    ingredient_id: '' as number | string,
+    stock_item_id: '' as number | string,
     type: 'purchase',
     qty: 0,
     use_purchase_unit: true,
@@ -102,8 +109,8 @@ const form = useForm({
 })
 
 /** วัตถุดิบที่กำลังเลือกในฟอร์มความเคลื่อนไหว */
-const moveTarget = computed<IngredientRow | undefined>(() =>
-    props.ingredients.data.find((i) => i.id === Number(form.ingredient_id)),
+const moveTarget = computed<StockItemRow | undefined>(() =>
+    props.stockItems.data.find((i) => i.id === Number(form.stock_item_id)),
 )
 
 /** กรอกเป็นหน่วยซื้อได้เฉพาะตอนรับของ และของตัวนั้นตั้งหน่วยซื้อไว้ */
@@ -130,10 +137,10 @@ function submit() {
 
 /* ---------- เพิ่ม/แก้ไขวัตถุดิบ ---------- */
 
-const showIngredient = ref(false)
-const editing = ref<IngredientRow | null>(null)
+const showItem = ref(false)
+const editing = ref<StockItemRow | null>(null)
 
-const ingredientForm = useForm({
+const itemForm = useForm({
     code: '',
     name: '',
     unit: 'g',
@@ -143,24 +150,27 @@ const ingredientForm = useForm({
     reorder_level: 0,
     opening_qty: 0,
     is_active: true,
+    used_here: true,
+    // สร้างเป็นของกลางไหม — เจ้าของระบบเท่านั้นที่ติ๊กได้
+    is_central: false,
 })
 
 /** เปลี่ยนหน่วยฐานแล้วเติมหน่วยซื้อที่มักคู่กันให้ เช่น กรัม -> กก. ×1000 */
 watch(
-    () => ingredientForm.unit,
+    () => itemForm.unit,
     (value, old) => {
         if (!old || editing.value) return
 
         const u = props.units.find((x) => x.value === value)
         if (!u) return
 
-        ingredientForm.purchase_unit = u.suggested_purchase_unit ?? ''
-        ingredientForm.purchase_factor = u.suggested_purchase_factor
+        itemForm.purchase_unit = u.suggested_purchase_unit ?? ''
+        itemForm.purchase_factor = u.suggested_purchase_factor
     },
 )
 
 const formUnitLabel = computed(
-    () => props.units.find((u) => u.value === ingredientForm.unit)?.label ?? '',
+    () => props.units.find((u) => u.value === itemForm.unit)?.label ?? '',
 )
 
 /** ของที่มีสูตรใช้อยู่ เปลี่ยนหน่วยฐานไม่ได้ ตัวเลขในสูตรจะเพี้ยน */
@@ -168,15 +178,15 @@ const unitLocked = computed(() => (editing.value?.in_use ?? 0) > 0)
 
 function openCreate() {
     editing.value = null
-    ingredientForm.reset()
-    ingredientForm.clearErrors()
-    showIngredient.value = true
+    itemForm.reset()
+    itemForm.clearErrors()
+    showItem.value = true
 }
 
-function openEdit(row: IngredientRow) {
+function openEdit(row: StockItemRow) {
     editing.value = row
-    ingredientForm.clearErrors()
-    ingredientForm.defaults({
+    itemForm.clearErrors()
+    itemForm.defaults({
         code: row.code ?? '',
         name: row.name,
         unit: row.unit,
@@ -186,22 +196,24 @@ function openEdit(row: IngredientRow) {
         reorder_level: row.reorder_level,
         opening_qty: 0,
         is_active: row.is_active,
+        used_here: row.used_here,
+        is_central: row.is_central,
     })
-    ingredientForm.reset()
-    showIngredient.value = true
+    itemForm.reset()
+    showItem.value = true
 }
 
-function submitIngredient() {
-    const done = { preserveScroll: true, onSuccess: () => (showIngredient.value = false) }
+function submitItem() {
+    const done = { preserveScroll: true, onSuccess: () => (showItem.value = false) }
 
     if (editing.value) {
-        ingredientForm.put(`/backoffice/inventory/items/${editing.value.id}`, done)
+        itemForm.put(`/backoffice/inventory/items/${editing.value.id}`, done)
     } else {
-        ingredientForm.post('/backoffice/inventory/items', done)
+        itemForm.post('/backoffice/inventory/items', done)
     }
 }
 
-function removeIngredient(row: IngredientRow) {
+function removeItem(row: StockItemRow) {
     router.delete(`/backoffice/inventory/items/${row.id}`, { preserveScroll: true })
 }
 </script>
@@ -225,7 +237,7 @@ function removeIngredient(row: IngredientRow) {
                     </div>
                 </template>
 
-                <DataTable v-if="ingredients.data.length">
+                <DataTable v-if="stockItems.data.length">
                     <thead>
                         <tr>
                             <th>วัตถุดิบ</th>
@@ -238,11 +250,18 @@ function removeIngredient(row: IngredientRow) {
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="i in ingredients.data" :key="i.id">
+                        <tr v-for="i in stockItems.data" :key="i.id">
                             <td class="font-medium">
                                 <span :class="!i.is_active && 'text-muted-foreground line-through'">{{ i.name }}</span>
                                 <span v-if="i.code" class="ms-1.5 text-[11px] font-normal text-muted-foreground">
                                     {{ i.code }}
+                                </span>
+                                <span
+                                    v-if="i.is_central"
+                                    class="ms-1.5 rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-normal text-muted-foreground"
+                                    title="ของกลาง ทุกสาขาใช้ร่วมกัน — ยอดคงเหลือยังแยกของใครของมัน"
+                                >
+                                    ของกลาง
                                 </span>
                                 <p v-if="i.purchase_unit_label" class="text-[11px] font-normal text-muted-foreground">
                                     ซื้อเป็น {{ i.purchase_unit_label }}
@@ -272,7 +291,7 @@ function removeIngredient(row: IngredientRow) {
                                         :aria-label="i.in_use ? 'ลบไม่ได้ มีสูตรใช้อยู่' : 'ลบ'"
                                         :disabled="i.in_use > 0"
                                         :title="i.in_use ? `มีสูตร/ตัวเลือกใช้อยู่ ${i.in_use} รายการ` : 'ลบ'"
-                                        @click="removeIngredient(i)"
+                                        @click="removeItem(i)"
                                     >
                                         <Trash2 />
                                     </Button>
@@ -283,7 +302,7 @@ function removeIngredient(row: IngredientRow) {
                 </DataTable>
                 <EmptyState v-else description="ยังไม่มีวัตถุดิบในระบบ — กด เพิ่มวัตถุดิบ เพื่อเริ่มต้น" />
 
-                <Pagination :links="ingredients.links" :total="ingredients.total" />
+                <Pagination :links="stockItems.links" :total="stockItems.total" />
             </SectionCard>
 
             <SectionCard title="ความเคลื่อนไหวล่าสุด" content-class="p-0">
@@ -292,7 +311,7 @@ function removeIngredient(row: IngredientRow) {
                         <div class="min-w-0 flex-1 space-y-1">
                             <div class="flex items-center gap-2">
                                 <p class="truncate font-medium text-foreground">
-                                    {{ m.ingredient?.name ?? 'ไม่พบวัตถุดิบ' }}
+                                    {{ m.stock_item?.name ?? 'ไม่พบของชิ้นนี้' }}
                                 </p>
                                 <Badge :variant="movementBadgeVariant(m.type)" class="text-[10px] px-1.5 py-0 shrink-0">
                                     {{ m.type_label }}
@@ -301,7 +320,7 @@ function removeIngredient(row: IngredientRow) {
                             <div class="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
                                 <span>{{ dateTime(m.occurred_at) }}</span>
                                 <span>·</span>
-                                <span>คงเหลือ {{ number(m.balance_after, m.ingredient?.unit_decimals ?? 2) }} {{ m.ingredient?.unit_label }}</span>
+                                <span>คงเหลือ {{ number(m.balance_after, m.stock_item?.unit_decimals ?? 2) }} {{ m.stock_item?.unit_label }}</span>
                             </div>
                             <p v-if="m.note" class="text-xs text-muted-foreground italic truncate">
                                 {{ m.note }}
@@ -312,8 +331,8 @@ function removeIngredient(row: IngredientRow) {
                                 class="tabular font-semibold block"
                                 :class="Number(m.qty) >= 0 ? 'text-[var(--status-good)]' : 'text-[var(--status-critical)]'"
                             >
-                                {{ Number(m.qty) >= 0 ? '+' : '' }}{{ number(m.qty, m.ingredient?.unit_decimals ?? 2) }}
-                                <span class="text-xs font-normal text-muted-foreground">{{ m.ingredient?.unit_label }}</span>
+                                {{ Number(m.qty) >= 0 ? '+' : '' }}{{ number(m.qty, m.stock_item?.unit_decimals ?? 2) }}
+                                <span class="text-xs font-normal text-muted-foreground">{{ m.stock_item?.unit_label }}</span>
                             </span>
                             <span v-if="m.cost && Number(m.cost) > 0" class="text-[11px] tabular text-muted-foreground block">
                                 {{ money(m.cost) }}
@@ -327,31 +346,31 @@ function removeIngredient(row: IngredientRow) {
 
         <!-- ══ เพิ่ม/แก้ไขวัตถุดิบ ══ -->
         <Modal
-            v-model:open="showIngredient"
+            v-model:open="showItem"
             :title="editing ? 'แก้ไขวัตถุดิบ' : 'เพิ่มวัตถุดิบ'"
             description="คลังเก็บได้ทุกอย่างที่ร้านใช้ — เนื้อสัตว์ ซอส น้ำแข็ง ถุงพลาสติก"
         >
-            <form class="space-y-3" @submit.prevent="submitIngredient">
+            <form class="space-y-3" @submit.prevent="submitItem">
                 <div class="grid grid-cols-3 gap-3">
                     <div class="space-y-1">
                         <Label for="i-code">รหัส</Label>
-                        <Input id="i-code" v-model="ingredientForm.code" placeholder="ING001" />
-                        <p v-if="ingredientForm.errors.code" class="text-xs text-destructive">
-                            {{ ingredientForm.errors.code }}
+                        <Input id="i-code" v-model="itemForm.code" placeholder="ING001" />
+                        <p v-if="itemForm.errors.code" class="text-xs text-destructive">
+                            {{ itemForm.errors.code }}
                         </p>
                     </div>
                     <div class="col-span-2 space-y-1">
                         <Label for="i-name">ชื่อ</Label>
-                        <Input id="i-name" v-model="ingredientForm.name" required placeholder="หมูหมัก" />
-                        <p v-if="ingredientForm.errors.name" class="text-xs text-destructive">
-                            {{ ingredientForm.errors.name }}
+                        <Input id="i-name" v-model="itemForm.name" required placeholder="หมูหมัก" />
+                        <p v-if="itemForm.errors.name" class="text-xs text-destructive">
+                            {{ itemForm.errors.name }}
                         </p>
                     </div>
                 </div>
 
                 <div class="space-y-1">
                     <Label for="i-unit">หน่วยฐาน</Label>
-                    <Select id="i-unit" v-model="ingredientForm.unit" :disabled="unitLocked">
+                    <Select id="i-unit" v-model="itemForm.unit" :disabled="unitLocked">
                         <option v-for="u in units" :key="u.value" :value="u.value">
                             {{ u.label }} ({{ u.group }})
                         </option>
@@ -368,21 +387,21 @@ function removeIngredient(row: IngredientRow) {
                 <div class="grid grid-cols-2 gap-3">
                     <div class="space-y-1">
                         <Label for="i-punit">หน่วยตอนซื้อ</Label>
-                        <Input id="i-punit" v-model="ingredientForm.purchase_unit" placeholder="กก." />
+                        <Input id="i-punit" v-model="itemForm.purchase_unit" placeholder="กก." />
                     </div>
                     <div class="space-y-1">
                         <Label for="i-pfac">1 หน่วยซื้อ = กี่{{ formUnitLabel }}</Label>
                         <Input
                             id="i-pfac"
-                            v-model="ingredientForm.purchase_factor"
+                            v-model="itemForm.purchase_factor"
                             type="number"
                             step="0.0001"
                             min="0.0001"
                             required
                             class="tabular"
                         />
-                        <p v-if="ingredientForm.errors.purchase_factor" class="text-xs text-destructive">
-                            {{ ingredientForm.errors.purchase_factor }}
+                        <p v-if="itemForm.errors.purchase_factor" class="text-xs text-destructive">
+                            {{ itemForm.errors.purchase_factor }}
                         </p>
                     </div>
                 </div>
@@ -395,7 +414,7 @@ function removeIngredient(row: IngredientRow) {
                         <Label for="i-cost">ต้นทุนต่อ{{ formUnitLabel }}</Label>
                         <Input
                             id="i-cost"
-                            v-model="ingredientForm.cost_per_unit"
+                            v-model="itemForm.cost_per_unit"
                             type="number"
                             step="0.0001"
                             min="0"
@@ -407,7 +426,7 @@ function removeIngredient(row: IngredientRow) {
                         <Label for="i-reorder">จุดสั่งซื้อ ({{ formUnitLabel }})</Label>
                         <Input
                             id="i-reorder"
-                            v-model="ingredientForm.reorder_level"
+                            v-model="itemForm.reorder_level"
                             type="number"
                             step="0.001"
                             min="0"
@@ -419,7 +438,7 @@ function removeIngredient(row: IngredientRow) {
 
                 <div v-if="!editing" class="space-y-1">
                     <Label for="i-opening">ยอดตั้งต้น ({{ formUnitLabel }})</Label>
-                    <Input id="i-opening" v-model="ingredientForm.opening_qty" type="number" step="0.001" class="tabular" />
+                    <Input id="i-opening" v-model="itemForm.opening_qty" type="number" step="0.001" class="tabular" />
                     <p class="text-xs text-muted-foreground">
                         บันทึกเป็นรายการ "ปรับยอด" ให้อัตโนมัติ จะได้มีรอยในบัญชีความเคลื่อนไหว
                     </p>
@@ -430,13 +449,36 @@ function removeIngredient(row: IngredientRow) {
                 </p>
 
                 <label class="flex cursor-pointer items-center gap-2 text-sm">
-                    <input v-model="ingredientForm.is_active" type="checkbox" class="size-4 rounded border-input" />
+                    <input v-model="itemForm.is_active" type="checkbox" class="size-4 rounded border-input" />
                     ใช้งาน
                 </label>
 
+                <label class="flex cursor-pointer items-center gap-2 text-sm">
+                    <input v-model="itemForm.used_here" type="checkbox" class="size-4 rounded border-input" />
+                    สาขานี้ใช้ของชิ้นนี้
+                </label>
+
+                <!--
+                    ของกลางใช้ร่วมกันทุกสาขา แก้ชื่อทีเดียวเปลี่ยนหมด
+                    จึงให้เฉพาะเจ้าของระบบสร้างได้ และเปลี่ยนทีหลังไม่ได้ —
+                    ของที่มีสาขาอื่นใช้อยู่แล้ว ดึงกลับมาเป็นของสาขาเดียวไม่ได้
+                -->
+                <label
+                    v-if="canEditCentral && ! editing"
+                    class="flex cursor-pointer items-start gap-2 rounded-lg border border-dashed px-3 py-2 text-sm"
+                >
+                    <input v-model="itemForm.is_central" type="checkbox" class="mt-0.5 size-4 rounded border-input" />
+                    <span>
+                        สร้างเป็นของกลาง
+                        <span class="block text-xs text-muted-foreground">
+                            ทุกสาขาหยิบไปใช้ในสูตรได้ แต่ยอดคงเหลือและต้นทุนยังแยกของใครของมัน
+                        </span>
+                    </span>
+                </label>
+
                 <div class="flex justify-end gap-2 pt-2">
-                    <Button type="button" variant="outline" @click="showIngredient = false">ยกเลิก</Button>
-                    <Button type="submit" variant="brand" :disabled="ingredientForm.processing">บันทึก</Button>
+                    <Button type="button" variant="outline" @click="showItem = false">ยกเลิก</Button>
+                    <Button type="submit" variant="brand" :disabled="itemForm.processing">บันทึก</Button>
                 </div>
             </form>
         </Modal>
@@ -446,9 +488,9 @@ function removeIngredient(row: IngredientRow) {
             <form class="space-y-3" @submit.prevent="submit">
                 <div class="space-y-1">
                     <Label for="ing">วัตถุดิบ</Label>
-                    <Select id="ing" v-model="form.ingredient_id" required>
+                    <Select id="ing" v-model="form.stock_item_id" required>
                         <option value="">เลือกวัตถุดิบ</option>
-                        <option v-for="i in ingredients.data" :key="i.id" :value="i.id">
+                        <option v-for="i in stockItems.data" :key="i.id" :value="i.id">
                             {{ i.name }} (คงเหลือ {{ number(i.stock_qty, i.unit_decimals) }} {{ i.unit_label }})
                         </option>
                     </Select>

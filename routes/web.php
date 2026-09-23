@@ -84,8 +84,22 @@ Route::middleware(['auth', 'permission:backoffice.access'])
         Route::get('inventory', [BackOffice\InventoryController::class, 'index'])->name('inventory.index');
         Route::post('inventory/move', [BackOffice\InventoryController::class, 'move'])->name('inventory.move');
         Route::post('inventory/items', [BackOffice\InventoryController::class, 'store'])->name('inventory.items.store');
-        Route::put('inventory/items/{ingredient}', [BackOffice\InventoryController::class, 'update'])->name('inventory.items.update');
-        Route::delete('inventory/items/{ingredient}', [BackOffice\InventoryController::class, 'destroy'])->name('inventory.items.destroy');
+        Route::put('inventory/items/{item}', [BackOffice\InventoryController::class, 'update'])->name('inventory.items.update');
+        Route::delete('inventory/items/{item}', [BackOffice\InventoryController::class, 'destroy'])->name('inventory.items.destroy');
+
+        /*
+        | โอนของข้ามสถานี — ทำได้ตั้งแต่ของในคลังเป็นของกลาง (stock_items.branch_id = NULL)
+        |
+        | สองขั้น: ต้นทางกดส่ง (ตัดสต๊อกทันที) แล้วปลายทางกดรับ
+        | สิทธิ์ stock.transfer เปิดหน้าได้ ส่วนจะส่ง/รับใบไหนได้ คุมด้วย accessibleBranchIds()
+        | ใน controller อีกชั้น — ผู้จัดการจึงโอนออกได้เฉพาะสาขาตัวเอง
+        */
+        Route::middleware('permission:stock.transfer')->group(function () {
+            Route::get('stock-transfers', [BackOffice\StockTransferController::class, 'index'])->name('stock-transfers.index');
+            Route::post('stock-transfers', [BackOffice\StockTransferController::class, 'store'])->name('stock-transfers.store');
+            Route::post('stock-transfers/{transfer}/receive', [BackOffice\StockTransferController::class, 'receive'])->name('stock-transfers.receive');
+            Route::post('stock-transfers/{transfer}/cancel', [BackOffice\StockTransferController::class, 'cancel'])->name('stock-transfers.cancel');
+        });
 
         // กลุ่มตัวเลือก — ปริมาณ / เพิ่มพิเศษ และวัตถุดิบที่แต่ละตัวเลือกใช้
         Route::get('modifiers', [BackOffice\ModifierController::class, 'index'])->name('modifiers.index');
@@ -173,6 +187,25 @@ Route::middleware(['auth', 'permission:backoffice.access'])
             Route::get('sales-export', [BackOffice\SalesExportController::class, 'index'])->name('sales-export');
             Route::post('sales-export', [BackOffice\SalesExportController::class, 'store'])->name('sales-export.store');
             Route::get('sales-export/{export}/download', [BackOffice\SalesExportController::class, 'download'])->name('sales-export.download');
+        });
+
+        /*
+        | เปิดสถานีใหม่ ปิดสถานีเก่า และข้อมูลแบรนด์ของ "ทุก" สถานี
+        |
+        | แยกสิทธิ์ออกจาก branch.settings เพราะคนละขอบเขต:
+        | branch.settings = ตั้งค่าการขายของสถานีตัวเอง (ผู้จัดการสาขาทำได้)
+        | station.manage  = โครงสร้างของกิจการ (ค่าตั้งต้นมีเฉพาะเจ้าของระบบ)
+        */
+        Route::middleware('permission:station.manage')->group(function () {
+            Route::get('stations', [BackOffice\StationController::class, 'index'])->name('stations.index');
+            Route::post('stations', [BackOffice\StationController::class, 'store'])->name('stations.store');
+            Route::put('stations/{branch}', [BackOffice\StationController::class, 'update'])->name('stations.update');
+            Route::post('stations/{branch}/active', [BackOffice\StationController::class, 'toggleActive'])->name('stations.active');
+
+            // รูปบรรยากาศร้าน — order ต้องมาก่อน {image} ไม่งั้น "order" จะถูกอ่านเป็นเลขรูป
+            Route::put('stations/{branch}/images/order', [BackOffice\StationController::class, 'reorderImages'])->name('stations.images.order');
+            Route::post('stations/{branch}/images', [BackOffice\StationController::class, 'storeImage'])->name('stations.images.store');
+            Route::delete('stations/{branch}/images/{image}', [BackOffice\StationController::class, 'destroyImage'])->name('stations.images.destroy');
         });
 
         Route::middleware('permission:branch.settings')->group(function () {

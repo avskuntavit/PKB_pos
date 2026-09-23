@@ -60,7 +60,17 @@ class OnlineOrderService
     ): Order {
         $this->guard($branch, $lines, $staff);
 
-        return DB::transaction(function () use ($branch, $lines, $contact, $type, $pickupAt, $intent, $staff, $table, $guestName) {
+        /*
+        | $member ต้องอยู่ในรายการ use ด้วย — เคยตกหล่นไป
+        |
+        | ข้างในเขียนว่า `$customer = $member ?? $this->linkCustomer($branch, $contact)`
+        | พอ $member ไม่ถูกส่งเข้ามา PHP มองเป็น null ทุกครั้ง แล้วตกไปเดาจากเบอร์ที่พิมพ์เสมอ
+        |
+        | ผลที่ตามมาหนักกว่าเรื่องส่วนลด: ลูกค้าที่ล็อกอินอยู่แล้วพิมพ์เบอร์คนอื่นตอนสั่ง
+        | บิลจะไปผูกกับบัญชีของเจ้าของเบอร์นั้น — แต้มและประวัติการสั่งเข้าบัญชีผิดคน
+        | และสิทธิ์สวัสดิการพนักงานก็คิดจากบัญชีที่เดาได้ ไม่ใช่บัญชีที่ล็อกอินอยู่จริง
+        */
+        return DB::transaction(function () use ($branch, $lines, $contact, $type, $pickupAt, $intent, $staff, $table, $member, $guestName) {
             $placedByStaff = $staff !== null;
 
             /*

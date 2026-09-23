@@ -240,6 +240,18 @@ function cancelOrder() {
                         <dt class="font-medium">ยอดที่ต้องชำระ</dt>
                         <dd class="tabular text-xl font-semibold">{{ money(order.totals.grand_total) }} ฿</dd>
                     </div>
+
+                    <!--
+                        กันความเข้าใจผิดที่เกิดแน่ ๆ ถ้าไม่บอก:
+                        ลูกค้าโอนไปแล้วแต่ยอดนี้ยังขึ้นอยู่ เพราะระบบไม่ได้ต่อกับธนาคาร
+                        จึงไม่รู้ว่าเงินเข้าแล้ว ต้องรอพนักงานตรวจสลิปก่อน
+                    -->
+                    <div
+                        v-if="promptPayPayload && !order.is_paid && !failed"
+                        class="border-t pt-1.5 text-xs text-muted-foreground"
+                    >
+                        ถ้าโอนล่วงหน้าแล้ว ยอดนี้จะยังแสดงอยู่จนกว่าพนักงานจะตรวจสลิปและกดรับเงิน
+                    </div>
                 </dl>
             </section>
 

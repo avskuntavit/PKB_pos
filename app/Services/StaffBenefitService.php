@@ -63,7 +63,22 @@ class StaffBenefitService
             return array_merge($empty, ['reason' => 'ยังไม่ได้รับการยืนยันสิทธิ์พนักงานองค์กร']);
         }
 
-        $order->loadMissing('activeItems.product');
+        /*
+        | ต้องเป็น load ไม่ใช่ loadMissing — เคยเป็น loadMissing แล้วสวัสดิการไม่เคยทำงานเลย
+        |
+        | `OrderService::recalculate()` โหลด relation นี้ไว้ก่อนหน้าด้วย
+        | `activeItems.product:id,category_id` คือดึงมาแค่สองคอลัมน์เพื่อความเร็ว
+        | แล้ว `place()` ก็เรียก recalculate() ทันทีก่อนจะมาเรียกสวัสดิการ
+        |
+        | loadMissing เห็นว่า relation "โหลดแล้ว" จึงไม่ทำอะไรเลย
+        | เราจึงได้ Product ที่ไม่มี staff_price กับ is_alcohol ติดมาด้วย
+        | `staffPrice()` อ่านคอลัมน์ที่ไม่ได้ถูกดึงมา ได้ null → ข้ามทุกบรรทัด → ส่วนลด 0 เสมอ
+        | และมันเงียบสนิท เพราะ Eloquent คืน null ให้แอตทริบิวต์ที่ไม่ได้โหลด ไม่ได้โยน error
+        |
+        | บทเรียน: ชั้นที่ต้องการคอลัมน์เฉพาะ ต้องโหลดเองให้ครบ
+        | ห้ามฝากความหวังไว้กับว่าใครโหลดอะไรมาให้ก่อนหน้า
+        */
+        $order->load('activeItems.product');
 
         $lines = [];
         $excluded = [];

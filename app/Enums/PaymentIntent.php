@@ -19,7 +19,7 @@ enum PaymentIntent: string
     {
         return match ($this) {
             self::PayAtStore => 'จ่ายตอนมารับ',
-            self::PromptPay => 'พร้อมเพย์ (สแกนจ่ายได้เลย)',
+            self::PromptPay => 'พร้อมเพย์',
             self::KhonLaKhrueng => 'คนละครึ่ง',
             self::ThaiChuayThai => 'ไทยช่วยไทย',
         };
@@ -29,7 +29,9 @@ enum PaymentIntent: string
     {
         return match ($this) {
             self::PayAtStore => 'เงินสดหรือโอนที่เคาน์เตอร์ตอนมารับของ',
-            self::PromptPay => 'สแกน QR จ่ายล่วงหน้าได้เลย แล้วแสดงสลิปตอนมารับ',
+            self::PromptPay =>
+                'สแกน QR โอนล่วงหน้าได้ แต่ระบบตรวจยอดให้อัตโนมัติไม่ได้ '
+                .'ต้องแสดงสลิปให้พนักงานตอนมารับของ',
             self::KhonLaKhrueng, self::ThaiChuayThai =>
                 'แจ้งร้านไว้ล่วงหน้า พนักงานจะออก QR ของโครงการให้ที่เคาน์เตอร์ตอนมารับ',
         };

@@ -4,14 +4,21 @@ namespace Database\Seeders;
 
 use App\Enums\StockUnit;
 use App\Models\Branch;
-use App\Models\Ingredient;
+use App\Models\BranchStockItem;
 use App\Models\Modifier;
 use App\Models\ModifierRecipeItem;
 use App\Models\Product;
 use App\Models\RecipeItem;
+use App\Models\StockItem;
 use Illuminate\Database\Seeder;
 
 /**
+ * ของในคลังเป็น "แม่แบบกลาง" สร้างชุดเดียวใช้ได้ทุกสาขา
+ * ส่วนยอดคงเหลือ ต้นทุน และจุดสั่งซื้อสร้างแยกรายสาขา
+ *
+ * เดิม seeder นี้สร้างของซ้ำทุกสาขา — เปิดสาขาที่สามก็ได้ "เส้นเล็ก" เป็นตัวที่สาม
+ * ซึ่งเป็นปัญหาที่การย้ายของขึ้นเป็นกลางมาแก้
+ *
  * สต๊อกและสูตรเก็บด้วย "หน่วยฐาน" ที่เล็กที่สุด (กรัม / มล. / ชิ้น)
  * สูตรจึงเขียน 120 แทน 0.12 อ่านง่ายและกรอกพลาดยากกว่า
  *
@@ -22,8 +29,8 @@ class InventorySeeder extends Seeder
 {
     public function run(): void
     {
-        // [ชื่อ, หน่วยฐาน, คงเหลือ, ต้นทุน/หน่วยฐาน, จุดสั่งซื้อ, หน่วยซื้อ, 1 หน่วยซื้อ = กี่หน่วยฐาน]
-        $ingredients = [
+        // [ชื่อ, หน่วยฐาน, คงเหลือตั้งต้น, ต้นทุน/หน่วยฐาน, จุดสั่งซื้อ, หน่วยซื้อ, 1 หน่วยซื้อ = กี่หน่วยฐาน]
+        $catalogue = [
             ['เส้นหมี่ขาว', StockUnit::Gram, 30000, 0.0450, 5000, 'กก.', 1000],
             ['เส้นเล็ก', StockUnit::Gram, 25000, 0.0420, 5000, 'กก.', 1000],
             ['บะหมี่', StockUnit::Gram, 20000, 0.0550, 4000, 'กก.', 1000],
@@ -36,17 +43,27 @@ class InventorySeeder extends Seeder
             ['ถุงหูหิ้ว', StockUnit::Piece, 500, 0.3000, 100, 'แพ็ค', 100],
         ];
 
-        foreach (Branch::all() as $branch) {
-            $map = [];
+        /** @var array<string, StockItem> $map */
+        $map = [];
 
-            foreach ($ingredients as $i => [$name, $unit, $qty, $cost, $reorder, $pUnit, $pFactor]) {
-                $map[$name] = Ingredient::create([
+        // แม่แบบกลาง — branch_id = NULL สร้างครั้งเดียว
+        foreach ($catalogue as $i => [$name, $unit, , , , $pUnit, $pFactor]) {
+            $map[$name] = StockItem::create([
+                'branch_id' => null,
+                'code' => 'STK'.str_pad((string) ($i + 1), 3, '0', STR_PAD_LEFT),
+                'name' => $name,
+                'unit' => $unit,
+                'purchase_unit' => $pUnit,
+                'purchase_factor' => $pFactor,
+            ]);
+        }
+
+        foreach (Branch::all() as $branch) {
+            // ยอดคงเหลือและต้นทุนของแต่ละสาขา — ตั้งต้นเท่ากันไว้ก่อน แล้วแยกกันเองเมื่อเริ่มขาย
+            foreach ($catalogue as [$name, , $qty, $cost, $reorder]) {
+                BranchStockItem::create([
                     'branch_id' => $branch->id,
-                    'code' => 'ING'.str_pad((string) ($i + 1), 3, '0', STR_PAD_LEFT),
-                    'name' => $name,
-                    'unit' => $unit,
-                    'purchase_unit' => $pUnit,
-                    'purchase_factor' => $pFactor,
+                    'stock_item_id' => $map[$name]->id,
                     'stock_qty' => $qty,
                     'cost_per_unit' => $cost,
                     'reorder_level' => $reorder,
@@ -55,7 +72,10 @@ class InventorySeeder extends Seeder
 
             /*
             | สูตรฐาน — ใส่เฉพาะส่วนที่ทุกแบบใช้เหมือนกัน
-            | [ชื่อวัตถุดิบ, ปริมาณต่อ 1 จาน (หน่วยฐาน), โตตามขนาดจานไหม]
+            | [ชื่อของในคลัง, ปริมาณต่อ 1 จาน (หน่วยฐาน), โตตามขนาดจานไหม]
+            |
+            | สูตรยังแยกรายสาขา เพราะปริมาณต่อจานเป็นเรื่องของครัวแต่ละที่
+            | ต่างจากเดิมตรงที่ตอนนี้ทุกสาขาชี้ไปของกลางชิ้นเดียวกัน
             |
             | ถุงหูหิ้วตั้ง false ไว้ สั่งจัมโบ้ก็ยังใช้ใบเดียว ไม่ใช่สองใบ
             */
@@ -88,11 +108,11 @@ class InventorySeeder extends Seeder
 
                 $product->update(['track_stock' => true]);
 
-                foreach ($items as [$ingredientName, $qty, $scales]) {
+                foreach ($items as [$itemName, $qty, $scales]) {
                     RecipeItem::create([
                         'branch_id' => $branch->id,
                         'product_id' => $product->id,
-                        'ingredient_id' => $map[$ingredientName]->id,
+                        'stock_item_id' => $map[$itemName]->id,
                         'qty' => $qty,
                         'scales_with_portion' => $scales,
                     ]);
@@ -104,11 +124,11 @@ class InventorySeeder extends Seeder
     }
 
     /**
-     * วัตถุดิบที่ตัวเลือกเพิ่มเข้าไป (หน่วยฐาน)
+     * ของที่ตัวเลือกเพิ่มเข้าไป (หน่วยฐาน)
      *
-     * กลุ่ม "ปริมาณ" ไม่ต้องผูกวัตถุดิบ เพราะใช้ตัวคูณขนาดแทน
+     * กลุ่ม "ปริมาณ" ไม่ต้องผูกของ เพราะใช้ตัวคูณขนาดแทน
      *
-     * @param  array<string, Ingredient>  $map
+     * @param  array<string, StockItem>  $map
      */
     protected function linkModifierRecipes(int $branchId, array $map): void
     {
@@ -118,8 +138,8 @@ class InventorySeeder extends Seeder
             'เพิ่มลูกชิ้น' => ['ลูกชิ้น', 40],
         ];
 
-        foreach ($extras as $modifierName => [$ingredientName, $qty]) {
-            if (! isset($map[$ingredientName])) {
+        foreach ($extras as $modifierName => [$itemName, $qty]) {
+            if (! isset($map[$itemName])) {
                 continue;
             }
 
@@ -131,7 +151,7 @@ class InventorySeeder extends Seeder
                 ModifierRecipeItem::create([
                     'branch_id' => $branchId,
                     'modifier_id' => $modifier->id,
-                    'ingredient_id' => $map[$ingredientName]->id,
+                    'stock_item_id' => $map[$itemName]->id,
                     'qty' => $qty,
                 ]);
             }

@@ -45,6 +45,15 @@ class SelfOrderFlowTest extends TestCase
             'service_charge_rate' => 0,
             'rounding_mode' => 0,
             'business_day_start' => '05:00:00',
+            /*
+            | ร้านสมมติของเทสต์ชุดนี้ให้ลูกค้าสแกนสั่งเองได้เลย
+            |
+            | ค่าจริงของคอลัมน์นี้คือ true (ต้องให้พนักงานเปิดโต๊ะก่อน) ซึ่งเป็นด่านกัน
+            | คนถ่ายรูป QR กลับไปสั่งเล่นที่บ้าน แต่เทสต์ชุดนี้ตั้งใจทดสอบว่า
+            | "สั่งได้โดยไม่ต้องล็อกอิน" คนละเรื่องกับการเปิดโต๊ะ จึงปิดด่านนั้นไว้
+            | เทสต์ที่คุมด่านเปิดโต๊ะควรตั้งเป็น true แล้วเขียนแยกต่างหาก
+            */
+            'qr_requires_open_table' => false,
         ]);
 
         $this->table = DiningTable::create([
@@ -92,8 +101,14 @@ class SelfOrderFlowTest extends TestCase
 
     public function test_guest_can_order_without_logging_in(): void
     {
-        $response = $this->get('/t/'.$this->table->qr_token);
-        $response->assertOk();
+        /*
+        | สแกน QR แล้วต้องได้ redirect ไม่ใช่ 200
+        |
+        | TableEntryController ประกาศ return type เป็น RedirectResponse — มันพาไปหน้าเมนู
+        | เสมอ ทั้งกรณีที่โต๊ะเปิดแล้วและยังไม่เปิด เทสต์เดิมเช็ค assertOk() จึงเป็นไปไม่ได้
+        | ตั้งแต่แรก แค่ที่ผ่านมามันตกด้วยสาเหตุอื่นก่อนถึงบรรทัดนี้เลยไม่มีใครเห็น
+        */
+        $this->get('/t/'.$this->table->qr_token)->assertRedirect(route('storefront.menu'));
 
         $this->post('/t/'.$this->table->qr_token.'/orders', [
             'lines' => [

@@ -3,7 +3,8 @@
 namespace App\Http\Controllers\BackOffice;
 
 use App\Http\Controllers\Controller;
-use App\Models\Ingredient;
+use App\Models\BranchStockItem;
+use App\Models\StockItem;
 use App\Models\Product;
 use App\Models\RecipeItem;
 use App\Support\CurrentBranch;
@@ -26,10 +27,19 @@ class RecipeController extends Controller
     {
         $branchId = CurrentBranch::id();
 
+        /*
+        | ต้นทุนของทุกชิ้นในคลังของสาขานี้ อ่านรวดเดียว
+        |
+        | ของในคลังเป็นแม่แบบกลาง แต่ต้นทุนอยู่ที่ branch_stock_items รายสาขา
+        | ถ้าไล่ถามทีละบรรทัดในสูตร หน้านี้จะยิง query เป็นร้อยครั้ง
+        */
+        $costs = BranchStockItem::where('branch_id', $branchId)
+            ->pluck('cost_per_unit', 'stock_item_id');
+
         // สูตรแยกรายสาขา — ลากมาเฉพาะของสาขานี้ ไม่งั้นเมนูกลางจะโชว์สูตรของทุกสาขาปนกัน
         $products = Product::with([
             'category:id,name,color',
-            'recipeItems' => fn ($q) => $q->where('branch_id', $branchId)->with('ingredient:id,name,unit,cost_per_unit'),
+            'recipeItems' => fn ($q) => $q->where('branch_id', $branchId)->with('stockItem:id,name,unit'),
         ])
             ->forCatalog($branchId)
             ->search($request->input('search'))
@@ -52,27 +62,30 @@ class RecipeController extends Controller
                     : 0.0,
                 'items' => $p->recipeItems->map(fn (RecipeItem $r) => [
                     'id' => $r->id,
-                    'ingredient_id' => $r->ingredient_id,
-                    'name' => $r->ingredient?->name,
+                    'stock_item_id' => $r->stock_item_id,
+                    'name' => $r->stockItem?->name,
                     // ส่งเป็นชื่อไทยของหน่วยฐาน ไม่ใช่ค่าดิบอย่าง "g"
-                    'unit' => $r->ingredient?->unitLabel(),
+                    'unit' => $r->stockItem?->unitLabel(),
                     'qty' => (float) $r->qty,
-                    'cost_per_unit' => (float) ($r->ingredient?->cost_per_unit ?? 0),
-                    'line_cost' => round((float) $r->qty * (float) ($r->ingredient?->cost_per_unit ?? 0), 2),
+                    // ต้นทุนเป็นของรายสาขา จึงอ่านจากตารางของสาขา ไม่ใช่จากแม่แบบกลาง
+                    'cost_per_unit' => (float) ($costs[$r->stock_item_id] ?? 0),
+                    'line_cost' => round((float) $r->qty * (float) ($costs[$r->stock_item_id] ?? 0), 2),
                 ]),
             ]);
 
         return Inertia::render('BackOffice/Recipes/Index', [
             'products' => $products,
-            'ingredients' => Ingredient::where('branch_id', $branchId)
+            // ของที่สาขานี้ใช้ได้ = ของกลาง + ของเฉพาะสาขานี้
+            'stockItems' => StockItem::forCatalog($branchId)
                 ->where('is_active', true)
                 ->orderBy('name')
-                ->get(['id', 'name', 'unit', 'cost_per_unit'])
-                ->map(fn (Ingredient $i) => [
+                ->get(['id', 'name', 'unit', 'branch_id'])
+                ->map(fn (StockItem $i) => [
                     'id' => $i->id,
                     'name' => $i->name,
                     'unit' => $i->unitLabel(),
-                    'cost_per_unit' => (float) $i->cost_per_unit,
+                    'is_central' => $i->branch_id === null,
+                    'cost_per_unit' => (float) ($costs[$i->id] ?? 0),
                 ]),
             'filters' => $request->only('search'),
         ]);
@@ -85,7 +98,7 @@ class RecipeController extends Controller
 
         $data = $request->validate([
             'items' => ['array', 'max:40'],
-            'items.*.ingredient_id' => ['required', 'integer', 'exists:ingredients,id'],
+            'items.*.stock_item_id' => ['required', 'integer', 'exists:stock_items,id'],
             'items.*.qty' => ['required', 'numeric', 'min:0.0001'],
             'track_stock' => ['boolean'],
             'sync_cost' => ['boolean'],
@@ -97,19 +110,19 @@ class RecipeController extends Controller
             // ลบเฉพาะสูตรของสาขานี้ สาขาอื่นเขียนสูตรของตัวเองไว้ ห้ามล้างทิ้ง
             $product->recipeItems()->where('branch_id', $branchId)->delete();
 
-            $allowed = Ingredient::where('branch_id', $branchId)
-                ->whereIn('id', array_column($data['items'] ?? [], 'ingredient_id'))
+            // ของกลางใช้ได้ทุกสาขา ส่วนของเฉพาะสาขาอื่นห้ามผูก
+            $allowed = StockItem::forCatalog($branchId)
+                ->whereIn('id', array_column($data['items'] ?? [], 'stock_item_id'))
                 ->pluck('id')
                 ->all();
 
             foreach ($data['items'] ?? [] as $item) {
-                // กันผูกวัตถุดิบข้ามสาขา
-                if (! in_array($item['ingredient_id'], $allowed, true)) {
+                if (! in_array($item['stock_item_id'], $allowed, true)) {
                     continue;
                 }
 
                 $product->recipeItems()->create([
-                    'ingredient_id' => $item['ingredient_id'],
+                    'stock_item_id' => $item['stock_item_id'],
                     'qty' => $item['qty'],
                 ]);
             }
@@ -119,7 +132,7 @@ class RecipeController extends Controller
             // อัปเดตต้นทุนจากสูตรก็ต่อเมื่อผู้ใช้สั่ง
             // เพราะบางร้านอยากกรอกต้นทุนเองเพื่อกันเผื่อของเสีย
             if ($data['sync_cost'] ?? false) {
-                $product->load(['recipeItems' => fn ($q) => $q->where('branch_id', $branchId)->with('ingredient')]);
+                $product->load(['recipeItems' => fn ($q) => $q->where('branch_id', $branchId)]);
                 $product->cost = $product->recipeCost();
             }
 
@@ -134,7 +147,7 @@ class RecipeController extends Controller
     {
         $branchId = CurrentBranch::id();
 
-        $products = Product::with(['recipeItems' => fn ($q) => $q->where('branch_id', $branchId)->with('ingredient')])
+        $products = Product::with(['recipeItems' => fn ($q) => $q->where('branch_id', $branchId)])
             ->forCatalog($branchId)
             ->whereHas('recipeItems', fn ($q) => $q->where('branch_id', $branchId))
             ->get();

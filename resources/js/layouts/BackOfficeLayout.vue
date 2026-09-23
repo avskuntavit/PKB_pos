@@ -2,9 +2,11 @@
 import { computed, ref } from 'vue'
 import { Link, router, usePage } from '@inertiajs/vue3'
 import {
+    ArrowLeftRight,
     BadgeCheck,
     Banknote,
     Boxes,
+    Building2,
     ChartPie,
     ChefHat,
     Clock,
@@ -51,6 +53,8 @@ interface NavItem {
     name: string
     icon: any
     href: string
+    /** เห็นเฉพาะเจ้าของระบบ — ด่านจริงอยู่ที่ route ตรงนี้แค่ไม่โชว์ลิงก์ที่กดแล้วเด้ง 403 */
+    ownerOnly?: boolean
 }
 
 interface NavSection {
@@ -78,6 +82,7 @@ const navSections: NavSection[] = [
             { name: 'เซ็ตตัวเลือก (Modifiers)', icon: SlidersHorizontal, href: '/backoffice/modifiers' },
             { name: 'สูตรอาหารและวัตถุดิบ', icon: ChefHat, href: '/backoffice/recipes' },
             { name: 'สินค้าคงคลังและสต็อก', icon: Boxes, href: '/backoffice/inventory' },
+            { name: 'โอนของข้ามสถานี', icon: ArrowLeftRight, href: '/backoffice/stock-transfers' },
         ],
     },
     {
@@ -109,12 +114,28 @@ const navSections: NavSection[] = [
     {
         title: 'ตั้งค่าระบบ',
         items: [
+            { name: 'สถานีทั้งหมด', icon: Building2, href: '/backoffice/stations', ownerOnly: true },
             { name: 'ข้อมูลและตั้งค่าสาขา', icon: Settings, href: '/backoffice/settings/branch' },
             { name: 'เป้ายอดขายรายเดือน', icon: Target, href: '/backoffice/settings/targets' },
             { name: 'สิทธิ์การใช้งานพนักงาน', icon: ShieldCheck, href: '/backoffice/settings/permissions' },
         ],
     },
 ]
+
+/*
+| ซ่อนเมนูที่คนนี้กดไปก็เจอ 403
+|
+| ไม่ใช่ด่านความปลอดภัย — ด่านจริงคือ middleware permission ที่ route
+| ตรงนี้มีไว้ไม่ให้พนักงานเห็นเมนูที่ใช้ไม่ได้เต็มแถบข้าง
+*/
+const visibleSections = computed(() =>
+    navSections
+        .map((section) => ({
+            ...section,
+            items: section.items.filter((item) => !item.ownerOnly || user.value?.role === 'owner'),
+        }))
+        .filter((section) => section.items.length > 0),
+)
 
 function isActive(href: string): boolean {
     return page.url.startsWith(href)
@@ -181,7 +202,7 @@ function logout() {
             <!-- เมนูหลักแยกตามหมวดหมู่ -->
             <nav class="flex-1 space-y-4 overflow-y-auto overscroll-contain p-2.5">
                 <div
-                    v-for="(section, idx) in navSections"
+                    v-for="(section, idx) in visibleSections"
                     :key="section.title"
                     :class="{ 'border-t pt-3': idx > 0 }"
                 >

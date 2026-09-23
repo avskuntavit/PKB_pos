@@ -42,7 +42,7 @@ import EmptyState from '@/components/ui/EmptyState.vue'
 import { money, number } from '@/lib/format'
 
 interface RecipeLine {
-    ingredient_id: number | ''
+    stock_item_id: number | ''
     name?: string
     unit?: string
     qty: number
@@ -83,7 +83,7 @@ interface GroupRow {
 const props = defineProps<{
     groups: GroupRow[]
     products: Array<{ id: number; name: string; category_name: string | null }>
-    ingredients: Array<{ id: number; name: string; unit: string }>
+    stockItems: Array<{ id: number; name: string; unit: string }>
 }>()
 
 /* ---------- 1. จัดการเซ็ตตัวเลือก (Group) ---------- */
@@ -373,7 +373,7 @@ function stockEffect(m: ModifierRow): string {
 }
 
 function unitOf(id: number | ''): string {
-    return props.ingredients.find((i) => i.id === id)?.unit ?? ''
+    return props.stockItems.find((i) => i.id === id)?.unit ?? ''
 }
 </script>
 
@@ -926,9 +926,9 @@ function unitOf(id: number | ''): string {
                         </span>
 
                         <div class="flex-1 min-w-0">
-                            <Select v-model="line.ingredient_id" required>
+                            <Select v-model="line.stock_item_id" required>
                                 <option value="">เลือกวัตถุดิบ</option>
-                                <option v-for="s in ingredients" :key="s.id" :value="s.id">
+                                <option v-for="s in stockItems" :key="s.id" :value="s.id">
                                     {{ s.name }} ({{ s.unit }})
                                 </option>
                             </Select>
@@ -944,7 +944,7 @@ function unitOf(id: number | ''): string {
                                 placeholder="ปริมาณ"
                             />
                             <Badge variant="outline" class="text-xs shrink-0 bg-muted/40 min-w-10 text-center justify-center">
-                                {{ unitOf(line.ingredient_id) || 'หน่วย' }}
+                                {{ unitOf(line.stock_item_id) || 'หน่วย' }}
                             </Badge>
                         </div>
 
@@ -968,7 +968,7 @@ function unitOf(id: number | ''): string {
                         size="sm"
                         class="font-medium"
                         :disabled="editingModifier?.portion_multiplier !== 1"
-                        @click="recipeForm.items.push({ ingredient_id: '', qty: 1 })"
+                        @click="recipeForm.items.push({ stock_item_id: '', qty: 1 })"
                     >
                         <Plus class="size-3.5 mr-1" />
                         เพิ่มวัตถุดิบ

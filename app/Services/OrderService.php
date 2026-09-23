@@ -165,7 +165,7 @@ class OrderService
         $ids = array_values(array_unique(array_map('intval', $modifierIds)));
 
         $modifiers = $ids
-            ? Modifier::with(['group', 'recipeItems.ingredient'])
+            ? Modifier::with(['group', 'recipeItems'])
                 ->whereIn('id', $ids)
                 ->where('is_active', true)
                 ->get()
@@ -344,15 +344,20 @@ class OrderService
     }
 
     /**
-     * ออกเลขคิวและอัปเดตสถานะคิวรับอาหาร
+     * บิลหน้าเคาน์เตอร์ที่ไม่ได้นั่งโต๊ะ = ลูกค้ายืนรอรับ ต้องมีเลขคิวไว้เรียก
+     *
+     * บิลที่นั่งโต๊ะไม่ต้องมี เพราะพนักงานยกไปเสิร์ฟถึงโต๊ะอยู่แล้ว
+     * ออเดอร์ออนไลน์มีเลขคิวจาก OnlineOrderService ไปก่อนแล้ว จึงข้ามตรงนี้ไปเอง
      */
-    public function enterQueue(Order $order): void
+    protected function enterQueue(Order $order): void
     {
-        if ($order->queue_number === null) {
-            $this->queue->assign($order);
+        if ($order->dining_table_id || $order->queue_number) {
+            return;
         }
 
-        // ยังไม่เคยมีสถานะส่งมอบ = เริ่มนับที่ "กำลังทำ" ได้เลย
+        $this->queue->assign($order);
+
+        // ยังไม่เคยมีสถานะส่งมอบ = บิลหน้าร้านแท้ ๆ เริ่มนับที่ "กำลังทำ" ได้เลย
         if ($order->fulfilment_status === null) {
             $order->forceFill([
                 'fulfilment_status' => FulfilmentStatus::Preparing,
@@ -398,8 +403,6 @@ class OrderService
             ]);
 
             $this->kitchen->createTickets($order, $items, $ticketSource);
-
-            $this->enterQueue($order);
 
             return $items;
         });

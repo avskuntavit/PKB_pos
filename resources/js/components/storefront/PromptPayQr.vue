@@ -51,8 +51,12 @@ watch(() => props.payload, render)
         <div v-else class="my-1 size-52 animate-pulse bg-neutral-100" />
 
         <p class="tabular text-2xl font-bold">{{ money(amount) }} ฿</p>
+        <p class="text-xs font-medium text-neutral-700">
+            โอนแล้วเก็บสลิปไว้ด้วยนะครับ
+        </p>
         <p class="text-xs text-neutral-500">
-            โอนแล้วเก็บสลิปไว้แสดงพนักงานตอนมารับของด้วยนะครับ
+            ระบบไม่ได้เชื่อมกับธนาคาร ร้านจึงไม่เห็นยอดโอนเอง
+            พนักงานจะตรวจจากสลิปที่คุณแสดงตอนมารับของ
         </p>
     </div>
 </template>

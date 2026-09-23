@@ -6,10 +6,10 @@ use App\Models\Concerns\BelongsToBranch;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/** วัตถุดิบที่ตัวเลือกหนึ่งเพิ่ม (qty บวก) หรือลด (qty ติดลบ) จากสูตรฐาน */
+/** ของในคลังที่ตัวเลือกหนึ่งเพิ่ม (qty บวก) หรือลด (qty ติดลบ) จากสูตรฐาน */
 class ModifierRecipeItem extends Model
 {
-    // ผูกสาขาด้วยเหตุผลเดียวกับ RecipeItem — ตัวเลือกเป็นของกลาง แต่วัตถุดิบเป็นของสาขา
+    // ผูกสาขาด้วยเหตุผลเดียวกับ RecipeItem — ปริมาณเป็นเรื่องของครัวแต่ละที่
     use BelongsToBranch;
 
     protected $guarded = [];
@@ -24,8 +24,8 @@ class ModifierRecipeItem extends Model
         return $this->belongsTo(Modifier::class);
     }
 
-    public function ingredient(): BelongsTo
+    public function stockItem(): BelongsTo
     {
-        return $this->belongsTo(Ingredient::class);
+        return $this->belongsTo(StockItem::class);
     }
 }

@@ -38,6 +38,25 @@ return new class extends Migration
             $table->string('logo_path')->nullable();
             $table->text('intro')->nullable();
 
+            /*
+            | ข้อมูลแบรนด์ของสถานี
+            |
+            | **theme_color ไม่ได้อยู่ในไฟล์นี้** — ถูกเพิ่มที่
+            | 2026_01_01_001800_add_theme_color_to_branches_table.php
+            | อย่าย้ายมาไว้ตรงนี้โดยไม่ลบไฟล์นั้นทิ้งก่อน ไม่งั้น migrate:fresh
+            | จะล้มด้วย "duplicate column name: theme_color" แล้วเทสต์ที่ใช้ฐานข้อมูลตกทั้งชุด
+            |
+            | promo_title หายไปจริง ๆ ทั้งที่ PromoController เขียนและ MenuController อ่าน
+            | ฐานข้อมูลเก่ามีคอลัมน์นี้อยู่เพราะเคยถูกสร้างไว้ก่อน แล้วบรรทัดหายไปทีหลัง
+            |
+            | store_type เก็บเป็นค่าจาก App\Enums\StoreType
+            | latitude/longitude ใช้ 7 ตำแหน่งทศนิยม ละเอียดระดับ ~1 ซม. พอสำหรับหมุดหน้าร้าน
+            */
+            $table->string('promo_title', 60)->nullable();   // หัวข้อแถบโปรโมทบนหน้าสั่งอาหาร
+            $table->string('store_type', 40)->nullable();
+            $table->decimal('latitude', 10, 7)->nullable();
+            $table->decimal('longitude', 10, 7)->nullable();
+
             // พร้อมเพย์สำหรับสร้าง QR รับเงิน
             $table->string('promptpay_id', 20)->nullable();              // เบอร์มือถือ / เลขประจำตัวผู้เสียภาษี
             $table->string('promptpay_name', 60)->nullable();

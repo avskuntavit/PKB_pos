@@ -17,7 +17,7 @@ import type { Paginated } from '@/types'
 
 interface RecipeLine {
     id?: number
-    ingredient_id: number
+    stock_item_id: number
     name?: string | null
     unit?: string | null
     qty: number
@@ -40,7 +40,7 @@ interface ProductRow {
 
 const props = defineProps<{
     products: Paginated<ProductRow>
-    ingredients: Array<{ id: number; name: string; unit: string; cost_per_unit: string | number }>
+    stockItems: Array<{ id: number; name: string; unit: string; cost_per_unit: string | number }>
     filters: { search?: string }
 }>()
 
@@ -54,8 +54,8 @@ const saving = ref(false)
 /** ต้นทุนตามสูตรที่กำลังแก้อยู่ — คำนวณสดให้เห็นผลทันทีขณะพิมพ์ */
 const draftCost = computed(() =>
     lines.value.reduce((sum, line) => {
-        const ingredient = props.ingredients.find((i) => i.id === Number(line.ingredient_id))
-        return sum + Number(line.qty || 0) * Number(ingredient?.cost_per_unit ?? 0)
+        const stockItem = props.stockItems.find((i) => i.id === Number(line.stock_item_id))
+        return sum + Number(line.qty || 0) * Number(stockItem?.cost_per_unit ?? 0)
     }, 0),
 )
 
@@ -76,10 +76,10 @@ function open(product: ProductRow) {
 }
 
 function addLine() {
-    const first = props.ingredients[0]
+    const first = props.stockItems[0]
     if (!first) return
 
-    lines.value.push({ ingredient_id: first.id, qty: 0.1 })
+    lines.value.push({ stock_item_id: first.id, qty: 0.1 })
 }
 
 function save() {
@@ -92,7 +92,7 @@ function save() {
         {
             items: lines.value
                 .filter((l) => Number(l.qty) > 0)
-                .map((l) => ({ ingredient_id: Number(l.ingredient_id), qty: Number(l.qty) })),
+                .map((l) => ({ stock_item_id: Number(l.stock_item_id), qty: Number(l.qty) })),
             track_stock: trackStock.value,
             sync_cost: syncCost.value,
         },
@@ -186,8 +186,8 @@ function syncAll() {
                     <li v-for="(line, i) in lines" :key="i" class="flex flex-wrap items-end gap-2 rounded-lg border p-3">
                         <div class="min-w-[180px] flex-1 space-y-1">
                             <label :for="`ing-${i}`" class="text-xs text-muted-foreground">วัตถุดิบ</label>
-                            <Select :id="`ing-${i}`" v-model.number="line.ingredient_id">
-                                <option v-for="ing in ingredients" :key="ing.id" :value="ing.id">
+                            <Select :id="`ing-${i}`" v-model.number="line.stock_item_id">
+                                <option v-for="ing in stockItems" :key="ing.id" :value="ing.id">
                                     {{ ing.name }} ({{ money(ing.cost_per_unit) }}/{{ ing.unit }})
                                 </option>
                             </Select>
@@ -212,7 +212,7 @@ function syncAll() {
                 </ul>
                 <EmptyState v-else title="ยังไม่มีส่วนผสม" description="เพิ่มวัตถุดิบเพื่อคำนวณต้นทุนอัตโนมัติ" />
 
-                <Button type="button" variant="outline" size="sm" :disabled="ingredients.length === 0" @click="addLine">
+                <Button type="button" variant="outline" size="sm" :disabled="stockItems.length === 0" @click="addLine">
                     <Plus />
                     เพิ่มส่วนผสม
                 </Button>

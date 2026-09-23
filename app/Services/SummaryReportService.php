@@ -5,7 +5,7 @@ namespace App\Services;
 use App\Enums\OrderStatus;
 use App\Enums\OrderType;
 use App\Models\ActivityLog;
-use App\Models\Ingredient;
+use App\Models\BranchStockItem;
 use App\Models\Product;
 use App\Models\StockMovement;
 use App\Services\Concerns\SqlDateExpressions;
@@ -324,10 +324,13 @@ class SummaryReportService
             ->get()
             ->keyBy('type');
 
-        $lowStock = Ingredient::whereIn('branch_id', $this->branchIds)
-            ->whereColumn('stock_qty', '<=', 'reorder_level')
-            ->where('is_active', true)
-            ->count();
+        /*
+        | ของใกล้หมดนับที่ยอดของสาขา ไม่ใช่ที่แม่แบบกลาง
+        |
+        | scope low() ข้ามของที่ยังไม่ได้ตั้งจุดสั่งซื้อ (0) ด้วย — ของเดิมนับรวม
+        | ทำให้ทุกชิ้นที่ยอดเป็น 0 และยังไม่ตั้งจุดสั่งซื้อถูกนับว่าใกล้หมดตลอดเวลา
+        */
+        $lowStock = BranchStockItem::whereIn('branch_id', $this->branchIds)->low()->count();
 
         return [
             'purchase' => [

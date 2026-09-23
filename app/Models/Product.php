@@ -262,7 +262,13 @@ class Product extends Model
         return $this->staff_price !== null ? (float) $this->staff_price : null;
     }
 
-    /** ต้นทุนตามสูตรของสาขาหนึ่ง (ถ้าผูกวัตถุดิบไว้) */
+    /**
+     * ต้นทุนตามสูตรของสาขาหนึ่ง (ถ้าผูกของในคลังไว้)
+     *
+     * ของในคลังเป็นแม่แบบกลาง แต่ **ต้นทุนเป็นของรายสาขา** จึงอ่านจาก
+     * branch_stock_items ของสาขานั้น ไม่ใช่จากตัวแม่แบบ
+     * ของชิ้นเดียวกันคนละสาขาซื้อมาคนละราคาเป็นเรื่องปกติ
+     */
     public function recipeCost(?int $branchId = null): float
     {
         $branchId ??= CurrentBranch::id();
@@ -270,11 +276,21 @@ class Product extends Model
         // โหลดมาแล้วก็กรองในหน่วยความจำ ไม่ยิง query ซ้ำตอนวนหลายเมนู
         $items = $this->relationLoaded('recipeItems')
             ? $this->recipeItems->where('branch_id', $branchId)
-            : $this->recipeItemsAt($branchId)->with('ingredient')->get();
+            : $this->recipeItemsAt($branchId)->get();
+
+        $ids = $items->pluck('stock_item_id')->filter()->all();
+
+        if (! $ids) {
+            return 0.0;
+        }
+
+        $costs = BranchStockItem::where('branch_id', $branchId)
+            ->whereIn('stock_item_id', $ids)
+            ->pluck('cost_per_unit', 'stock_item_id');
 
         return round(
             $items->sum(
-                fn (RecipeItem $r) => (float) $r->qty * (float) ($r->ingredient?->cost_per_unit ?? 0)
+                fn (RecipeItem $r) => (float) $r->qty * (float) ($costs[$r->stock_item_id] ?? 0)
             ),
             2
         );

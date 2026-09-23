@@ -31,12 +31,18 @@ enum Permission: string
     case ProductManage = 'product.manage';
     case RecipeManage = 'recipe.manage';
     case InventoryManage = 'inventory.manage';
+    // โอนของข้ามสถานี — ผู้จัดการทำได้ แต่โอนออกได้เฉพาะสถานีที่ตัวเองดูแล
+    // (ด่านนั้นอยู่ที่ accessibleBranchIds() ใน controller ไม่ใช่ที่สิทธิ์ตัวนี้)
+    case StockTransfer = 'stock.transfer';
     case CustomerManage = 'customer.manage';
     case EmployeeVerify = 'customer.employee_verify';
     case PromotionManage = 'promotion.manage';
     case TableManage = 'table.manage';
     case StaffManage = 'staff.manage';
     case BranchSettings = 'branch.settings';
+    // เปิดสถานีใหม่และแก้ข้อมูลแบรนด์ของทุกสถานี — ไม่อยู่ในชุดตั้งต้นของผู้จัดการ
+    // เพราะผู้จัดการดูแลสถานีของตัวเอง ไม่ใช่โครงสร้างของทั้งกิจการ
+    case StationManage = 'station.manage';
     case CashSettleVerify = 'cash.settle_verify';
     case BankReconcile = 'bank.reconcile';
     case SalesExport = 'sales.export';
@@ -61,12 +67,14 @@ enum Permission: string
             self::ProductManage => 'จัดการเมนู',
             self::RecipeManage => 'จัดการสูตรและส่วนผสม',
             self::InventoryManage => 'จัดการคลัง',
+            self::StockTransfer => 'โอนของข้ามสถานี',
             self::CustomerManage => 'จัดการลูกค้า',
             self::EmployeeVerify => 'อนุมัติสิทธิ์พนักงานองค์กร',
             self::PromotionManage => 'จัดการโปรโมชั่นและ Voucher',
             self::TableManage => 'จัดการโต๊ะ',
             self::StaffManage => 'จัดการพนักงานและสิทธิ์',
             self::BranchSettings => 'ตั้งค่าสาขา',
+            self::StationManage => 'เปิดและจัดการสถานี',
             self::CashSettleVerify => 'ตรวจการนำส่งเงินกับธนาคาร',
             self::BankReconcile => 'กระทบยอดเงินกับธนาคาร',
             self::SalesExport => 'ส่งข้อมูลการขายให้ระบบบัญชี',
@@ -111,6 +119,7 @@ enum Permission: string
             self::ProductManage,
             self::RecipeManage,
             self::InventoryManage,
+            self::StockTransfer,
             self::CustomerManage,
             self::EmployeeVerify,
             self::PromotionManage,

@@ -8,6 +8,12 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+/**
+ * ความเคลื่อนไหวสต๊อกหนึ่งรายการ
+ *
+ * branch_id สำคัญกว่าเดิมมาก — เมื่อก่อนอ่านจากตัววัตถุดิบได้เพราะวัตถุดิบผูกสาขา
+ * ตอนนี้ของในคลังเป็นของกลาง สาขาจึงต้องระบุมาตรง ๆ เสมอ
+ */
 class StockMovement extends Model
 {
     use BelongsToBranch, HasFactory;
@@ -26,9 +32,9 @@ class StockMovement extends Model
         ];
     }
 
-    public function ingredient(): BelongsTo
+    public function stockItem(): BelongsTo
     {
-        return $this->belongsTo(Ingredient::class);
+        return $this->belongsTo(StockItem::class);
     }
 
     public function reference()
