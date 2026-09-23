@@ -26,40 +26,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         nginx \
         supervisor \
         curl \
-        gnupg2 \
-        ca-certificates \
-        apt-transport-https \
         unzip \
-        libzip-dev \
-        libpng-dev \
-        libjpeg62-turbo-dev \
-        libfreetype6-dev \
-        libicu-dev \
-        libonig-dev \
-        unixodbc-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# ไดรเวอร์ ODBC ของ Microsoft — ถ้าไม่มีตัวนี้ pdo_sqlsrv คอมไพล์ไม่ผ่าน
-RUN curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \
-        | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
-    && echo "deb [signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/debian/12/prod bookworm main" \
-        > /etc/apt/sources.list.d/mssql-release.list \
-    && apt-get update \
-    && ACCEPT_EULA=Y apt-get install -y --no-install-recommends msodbcsql18 \
-    && rm -rf /var/lib/apt/lists/*
-
-# pdo_sqlite ยังเก็บไว้ เพราะเทสต์ทั้งชุดรันบน sqlite ในหน่วยความจำ (ดู phpunit.xml)
-RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install -j"$(nproc)" \
-        pdo \
+# ติดตั้ง PHP extensions ผ่าน php-extension-installer
+# จัดการ dependencies ของระบบ (รวมถึง ODBC driver สำหรับ sqlsrv/pdo_sqlsrv, freetype สำหรับ gd ฯลฯ) อัตโนมัติ
+COPY --from=mlocati/php-extension-installer /usr/bin/install-php-extensions /usr/bin/install-php-extensions
+RUN install-php-extensions \
         pdo_sqlite \
         zip \
         bcmath \
         gd \
         intl \
         opcache \
-    && pecl install sqlsrv pdo_sqlsrv \
-    && docker-php-ext-enable sqlsrv pdo_sqlsrv
+        sqlsrv \
+        pdo_sqlsrv
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
