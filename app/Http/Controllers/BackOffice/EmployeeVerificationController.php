@@ -23,6 +23,13 @@ class EmployeeVerificationController extends Controller
     {
         $branchIds = $this->branchIds($request);
 
+        /*
+        | งวดของสาขาที่ HR กำลังทำงานอยู่ ไม่ใช่เดือนตามนาฬิกา
+        | ไม่งั้นช่วงหลังเที่ยงคืนของวันที่ 1 คอลัมน์นี้จะขึ้น 0 ทั้งหน้า
+        | ทั้งที่แคชเชียร์เห็นยอดสะสมของเมื่อคืนอยู่
+        */
+        $period = CurrentBranch::get()?->currentPeriod() ?? now()->format('Y-m');
+
         $rows = fn (?EmployeeStatus $status) => Customer::with('employeeReviewer:id,name')
             ->whereIn('branch_id', $branchIds)
             ->when($status, fn ($q) => $q->where('employee_status', $status->value))
@@ -41,7 +48,7 @@ class EmployeeVerificationController extends Controller
                 'requested_at' => $c->employee_requested_at?->toIso8601String(),
                 'reviewed_at' => $c->employee_reviewed_at?->toIso8601String(),
                 'reviewer' => $c->employeeReviewer?->name,
-                'used_this_month' => $c->benefitUsedIn(),
+                'used_this_month' => $c->benefitUsedIn($period),
             ])
             ->all();
 

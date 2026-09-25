@@ -8,13 +8,18 @@
  *   นับได้ vs โอนแล้ว  ต่างกัน = หายระหว่างทางไปธนาคาร
  * ถ้าโชว์ยอดเดียว พอไม่ตรงขึ้นมาจะไม่มีใครรู้ว่าต้องไปตามที่ไหน
  *
- * ── ทำไมช่อง "ควรได้" แก้ไม่ได้ ────────────────────────────
+ * ── ทำไมช่อง "ต้องนำส่ง" แก้ไม่ได้ ──────────────────────────
  * ระบบคิดจากบิล ถ้าให้พนักงานพิมพ์เอง ตัวเลขที่เอาไปเทียบก็มาจาก
  * คนเดียวกับที่ถือเงิน แล้วการตรวจสอบก็ไม่เหลือความหมาย
+ *
+ * ── ทำไมแยกบรรทัด "เงินรับตอนเน็ตหลุด" ─────────────────────
+ * เงินก้อนนั้นอยู่ในลิ้นชักจริงจึงต้องนับรวม แต่ยังไม่มีบิลรองรับ
+ * ถ้ากลืนเข้าไปในยอดเดียว พนักงานจะไม่รู้ว่ามีก้อนที่ยังไม่จบเรื่อง
+ * และพอผู้จัดการมาตรวจก็จะหาไม่เจอว่าส่วนต่างมาจากไหน
  */
 import { computed, ref } from 'vue'
 import { Head, router, useForm } from '@inertiajs/vue3'
-import { AlertTriangle, Banknote, Check, CircleAlert, Upload } from 'lucide-vue-next'
+import { AlertTriangle, Banknote, Check, CircleAlert, HandCoins, Upload } from 'lucide-vue-next'
 import PosLayout from '@/layouts/PosLayout.vue'
 import Button from '@/components/ui/Button.vue'
 import Input from '@/components/ui/Input.vue'
@@ -28,6 +33,7 @@ const props = defineProps<{
     businessDate: string
     settlement: CashSettlement
     hasOpenShift: boolean
+    unresolvedHeld: { count: number; amount: number }
     outstanding: Array<{
         business_date: string
         expected: number
@@ -37,12 +43,15 @@ const props = defineProps<{
 }>()
 
 const expected = computed(() => Number(props.settlement.expected_amount))
+const heldCash = computed(() => Number(props.settlement.held_cash_amount))
+/** ยอดที่ต้องนำส่งจริง = จากบิล + เงินที่รับมาแล้วยังไม่มีบิลรองรับ */
+const due = computed(() => Number(props.settlement.due_amount))
 const counted = computed(() => Number(props.settlement.counted_amount))
 const locked = computed(() => props.settlement.status === 'verified')
 
 /** ตั้งต้นด้วยยอดที่นับได้จริง ไม่ใช่ยอดที่ควรได้ — คนโอนตามเงินที่อยู่ในมือ */
 const form = useForm({
-    transferred_amount: String(counted.value > 0 ? counted.value : expected.value),
+    transferred_amount: String(counted.value > 0 ? counted.value : due.value),
     reference: '',
     note: '',
     slip: null as File | null,
@@ -51,7 +60,9 @@ const form = useForm({
 const { rotate: rotateKey, headers: keyHeaders } = useIdempotencyKey()
 
 const typed = computed(() => Number(form.transferred_amount) || 0)
-const diff = computed(() => Number((typed.value - expected.value).toFixed(2)))
+// เทียบกับยอดที่ต้องนำส่งทั้งหมด ไม่ใช่เฉพาะยอดจากบิล
+// ไม่งั้นวันที่มีเงินค้างจะขึ้นว่า "โอนเกิน" ทุกครั้งทั้งที่พนักงานส่งครบ
+const diff = computed(() => Number((typed.value - due.value).toFixed(2)))
 
 const slipName = ref<string | null>(null)
 
@@ -117,11 +128,30 @@ function goTo(date: string) {
                     </p>
                 </div>
 
+                <!-- เงินที่รับตอนเน็ตหลุดแต่ยังไม่มีใครตัดสิน -->
+                <div
+                    v-if="unresolvedHeld.count > 0"
+                    class="flex items-start gap-2.5 rounded-xl bg-[var(--status-warning)]/12 p-3 text-sm"
+                    role="status"
+                >
+                    <HandCoins class="mt-0.5 size-4 shrink-0 text-[var(--status-warning)]" />
+                    <p>
+                        มีเงินสด {{ money(unresolvedHeld.amount) }} บาท จาก
+                        {{ unresolvedHeld.count }} รายการ ที่รับมาตอนเน็ตหลุดแล้วยังลงบิลไม่ได้
+                        — <strong>นับรวมในยอดที่ต้องนำส่งแล้ว</strong> เพราะเงินอยู่ในลิ้นชักจริง
+                        ผู้จัดการต้องเข้าไปตัดสินที่หน้าเงินค้างด้วย
+                    </p>
+                </div>
+
                 <!-- สามยอด -->
                 <dl class="grid grid-cols-3 gap-2">
                     <div class="rounded-xl border bg-card p-3">
-                        <dt class="text-xs text-muted-foreground">ควรได้ (จากบิล)</dt>
-                        <dd class="tabular mt-1 text-lg font-bold">{{ money(expected) }}</dd>
+                        <dt class="text-xs text-muted-foreground">ต้องนำส่ง</dt>
+                        <dd class="tabular mt-1 text-lg font-bold">{{ money(due) }}</dd>
+                        <dd v-if="heldCash > 0" class="mt-0.5 text-[11px] text-muted-foreground">
+                            บิล {{ money(expected) }} + เน็ตหลุด {{ money(heldCash) }}
+                        </dd>
+                        <dd v-else class="mt-0.5 text-[11px] text-muted-foreground">คิดจากบิล</dd>
                     </div>
                     <div class="rounded-xl border bg-card p-3">
                         <dt class="text-xs text-muted-foreground">นับได้ในลิ้นชัก</dt>
@@ -189,7 +219,7 @@ function goTo(date: string) {
                     >
                         <CircleAlert class="mt-0.5 size-3.5 shrink-0 text-[var(--status-warning)]" />
                         <span>
-                            ยอดที่จะโอนไม่ตรงกับที่ควรได้ {{ money(Math.abs(diff)) }} บาท
+                            ยอดที่จะโอนไม่ตรงกับที่ต้องนำส่ง {{ money(Math.abs(diff)) }} บาท
                             เขียนเหตุผลไว้ในหมายเหตุด้วย ผู้จัดการจะได้ไม่ต้องตามถาม
                         </span>
                     </div>

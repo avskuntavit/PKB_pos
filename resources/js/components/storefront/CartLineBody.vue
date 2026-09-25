@@ -16,6 +16,13 @@ defineProps<{
     modifierNames: string[]
     note: string | null
     unitPrice: number
+    /**
+     * ชื่อคนที่หยิบรายการนี้ใส่ตะกร้า — มีเฉพาะตะกร้าร่วมของโต๊ะ
+     *
+     * ตะกร้าส่วนตัวไม่ต้องส่งมา เพราะมีเจ้าของคนเดียวอยู่แล้ว
+     * การเขียนชื่อตัวเองกำกับทุกบรรทัดในตะกร้าตัวเองคือการรบกวนสายตาเปล่า ๆ
+     */
+    orderedBy?: string | null
 }>()
 </script>
 
@@ -39,6 +46,13 @@ defineProps<{
             </ul>
 
             <p v-if="note" class="mt-1 text-sm text-muted-foreground">หมายเหตุ: {{ note }}</p>
+
+            <p v-if="orderedBy" class="mt-1 text-xs text-muted-foreground">
+                <span class="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5">
+                    <span aria-hidden="true">👤</span>
+                    {{ orderedBy }} สั่ง
+                </span>
+            </p>
 
             <slot name="actions" />
         </div>

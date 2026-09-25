@@ -51,6 +51,8 @@ const props = defineProps<{
     branch: { name: string; phone: string | null; address: string | null; code: string }
     order: TrackPayload
     promptPayPayload: string | null
+    /** ยอดถูกฝังใน QR แล้วหรือยัง — บิลยอดน้อยจะไม่ถูกฝัง */
+    promptPayHasAmount?: boolean
 }>()
 
 const page = usePage<PageProps>()
@@ -192,6 +194,7 @@ function cancelOrder() {
                 :payload="promptPayPayload"
                 :amount="order.totals.grand_total"
                 :merchant-name="branch.name"
+                :amount-in-qr="promptPayHasAmount"
             />
 
             <!-- โครงการรัฐ: พนักงานเป็นคนออก QR ที่เคาน์เตอร์ -->

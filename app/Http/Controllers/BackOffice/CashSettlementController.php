@@ -41,6 +41,8 @@ class CashSettlementController extends Controller
                 'id' => $s->id,
                 'business_date' => $s->business_date->toDateString(),
                 'expected_amount' => (float) $s->expected_amount,
+                'held_cash_amount' => (float) $s->held_cash_amount,
+                'due_amount' => $s->due(),
                 'counted_amount' => (float) $s->counted_amount,
                 'transferred_amount' => (float) $s->transferred_amount,
                 'diff_amount' => (float) $s->diff_amount,

@@ -133,6 +133,10 @@ export interface CashSettlement {
     id: number
     business_date: string
     expected_amount: number | string
+    /** เงินสดที่รับตอนเน็ตหลุดแต่ยังไม่มีบิลรองรับ */
+    held_cash_amount: number | string
+    /** expected_amount + held_cash_amount — ยอดที่ต้องนำส่งจริง */
+    due_amount: number
     counted_amount: number | string
     transferred_amount: number | string
     diff_amount: number | string
@@ -148,6 +152,8 @@ export interface CashSettlementRow {
     id: number
     business_date: string
     expected_amount: number
+    held_cash_amount: number
+    due_amount: number
     counted_amount: number
     transferred_amount: number
     diff_amount: number
@@ -261,6 +267,29 @@ export interface TableBill {
     }
     waiting_approval: number
     bill_called: boolean
+}
+
+/**
+ * หนึ่งบรรทัดในตะกร้า ในรูปแบบที่แผ่นตะกร้า (CartSheet) ต้องใช้
+ *
+ * ตั้งใจให้แคบกว่าทั้ง CartLine (ตะกร้าส่วนตัวใน localStorage)
+ * และ SharedCartLine (ตะกร้าร่วมของโต๊ะที่อยู่ฝั่งเซิร์ฟเวอร์)
+ * เพื่อให้ทั้งสองแบบส่งเข้าแผ่นเดียวกันได้ โดยแผ่นนั้นไม่ต้องรู้ว่าของมาจากไหน
+ *
+ * key เป็น string ทั้งคู่ — ตะกร้าส่วนตัวประกอบเองจาก product+ตัวเลือก+หมายเหตุ
+ * ส่วนตะกร้าร่วมใช้ id ของแถวในตาราง หน้าแม่เป็นคนแปลงให้
+ */
+export interface SheetLine {
+    key: string
+    name: string
+    qty: number
+    unit_price: number
+    modifier_names: string[]
+    note: string | null
+    /** ชื่อคนที่หยิบใส่ — มีเฉพาะตะกร้าร่วมของโต๊ะ */
+    guest_name?: string | null
+    /** ของเครื่องนี้เองหรือเปล่า — ใช้ตกแต่งอย่างเดียว ไม่ใช่สิทธิ์ในการแก้ */
+    mine?: boolean
 }
 
 export interface KitchenTicketItem {

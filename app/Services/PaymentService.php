@@ -181,7 +181,14 @@ class PaymentService
             throw new \DomainException('ไม่พบรหัสส่วนลดนี้');
         }
 
-        $base = (float) $order->subtotal - (float) $order->item_discount - (float) $order->bill_discount;
+        /*
+        | ฐานที่คูปองใบนี้มองเห็น — ร้านตั้งได้ต่อคูปอง ดู App\Enums\VoucherBase
+        |
+        | ตรงนี้ถูกเรียกก่อน recalculate() ของ pay() หนึ่งจังหวะ
+        | ค่า promotion_discount / staff_discount ที่อ่านได้จึงเป็นของรอบคำนวณล่าสุด
+        | ซึ่งตรงอยู่แล้วเพราะรายการในบิลยังไม่ขยับระหว่างสองบรรทัดนี้
+        */
+        $base = $voucher->base_mode->baseFor($order);
         $discount = $voucher->discountFor($base);
 
         if ($discount <= 0) {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { Head, Link, router, usePage } from '@inertiajs/vue3'
 import { BadgeCheck, BellRing, Check, ChevronRight, Clock, MapPin, Phone, Plus, Receipt, ShoppingBag, Store, UserRound, Users, Utensils } from 'lucide-vue-next'
 import ProductSheet from '@/components/guest/ProductSheet.vue'
@@ -17,9 +17,11 @@ import Spinner from '@/components/ui/Spinner.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import { useGuestCart } from '@/composables/useGuestCart'
 import { usePolling } from '@/composables/usePolling'
+import { useTableCart } from '@/composables/useTableCart'
+import type { SharedCartSummary } from '@/composables/useTableCart'
 import { money, number } from '@/lib/format'
 import { useIdempotencyKey } from '@/lib/idempotency'
-import type { Category, PageProps, Product, TableBill } from '@/types'
+import type { Category, PageProps, Product, SheetLine, TableBill } from '@/types'
 
 interface BranchInfo {
     code: string
@@ -79,7 +81,20 @@ const props = defineProps<{
 const page = usePage<PageProps>()
 const member = computed(() => page.props.customer)
 
+/*
+| ตะกร้าสองใบ ใช้ทีละใบ
+|
+| นั่งโต๊ะ (สแกน QR มา)  -> ตะกร้าร่วมฝั่งเซิร์ฟเวอร์ ทั้งโต๊ะเห็นใบเดียวกัน
+| สั่งกลับบ้าน/มารับเอง   -> ตะกร้าใน localStorage ของเครื่องตัวเองเหมือนเดิม
+|
+| ทำไมไม่ใช้ตะกร้าร่วมกับทุกคน: คนสั่งกลับบ้านไม่มีโต๊ะให้แชร์ ถ้าดันไปผูกกับ
+| อะไรสักอย่างฝั่งเซิร์ฟเวอร์ ก็ต้องมีรอบของมันเอง มีการปิดรอบ มีการหมดอายุ
+| ซึ่งเป็นงานทั้งกองเพื่อแก้ปัญหาที่เขาไม่มี
+*/
+const isShared = computed(() => props.table !== null)
+
 const cart = useGuestCart(`shop.${props.branch.code}`)
+const shared = useTableCart()
 
 const search = ref('')
 const activeCategory = ref<number | null>(null)
@@ -110,18 +125,34 @@ const { rotate: rotateOrderKey, headers: orderHeaders } = useIdempotencyKey()
 
 /*
 | บิลของโต๊ะต้องสดกว่าหน้าอื่น เพราะสถานะเปลี่ยนที่ครัว ไม่ได้เปลี่ยนที่มือลูกค้า
-| ลูกค้าจึงไม่มีทางรู้ว่าต้องรีเฟรชเมื่อไหร่ ดึงเองทุก 15 วินาทีพอ
-| (ถี่กว่านี้ไม่ได้ช่วยอะไร อาหารไม่ได้เสร็จทุก 5 วินาที แต่เปลืองแบตลูกค้า)
+| ลูกค้าจึงไม่มีทางรู้ว่าต้องรีเฟรชเมื่อไหร่ — ดึงเองเป็นรอบ ๆ
+|
+| ── ทำไมรอบไม่คงที่ ─────────────────────────────────────────────────────
+| ความสดที่ "พอดี" ของสามสถานการณ์นี้ไม่เท่ากันเลย
+|   นับถอยหลังส่งครัว  1 วิ  คนอื่นที่โต๊ะต้องเห็นนาฬิกาเดินทันพอจะกดยกเลิกได้
+|   นั่งโต๊ะเฉย ๆ       6 วิ  ของที่เพื่อนร่วมโต๊ะหยิบใส่ตะกร้าต้องโผล่ให้เห็นไว ๆ
+|   ไม่ได้นั่งโต๊ะ     15 วิ  มีแต่สถานะอาหาร ซึ่งไม่ได้เสร็จทุก 5 วินาทีอยู่แล้ว
+| ถ้าใช้ค่าถี่สุดกับทุกกรณี โต๊ะละห้าเครื่องจะยิงกันจนเปลืองแบตลูกค้าเปล่า ๆ
 */
-const { data: liveBill, fetchNow: refreshBill } = usePolling<{ bill: TableBill | null }>(
+const { data: liveBill, fetchNow: refreshBill } = usePolling<{
+    bill: TableBill | null
+    cart: SharedCartSummary | null
+}>(
     () => '/order/bill',
-    15000,
+    () => {
+        if (shared.isCounting.value) return 1000
+
+        return isShared.value ? 6000 : 15000
+    },
     () => props.table !== null,
 )
 
 const bill = computed<TableBill | null>(() =>
     liveBill.value ? liveBill.value.bill : props.tableBill,
 )
+
+// ตะกร้าร่วมเกาะมากับรอบเดียวกับบิล ไม่ได้เปิด endpoint ใหม่ให้ถามต่างหาก
+watch(liveBill, (feed) => shared.applyFromPoll(feed?.cart))
 
 /** แยกเป็น computed เพื่อให้ v-if แคบชนิดให้ ไม่ต้องเช็ค null ซ้ำในเทมเพลต */
 const memberSheet = computed(() => (showMember.value ? member.value : null))
@@ -190,7 +221,11 @@ function maskPhone(phone: string | null): string {
  * อย่างน้ำเปล่า/ข้าวเปล่า คนกดเพิ่มง่ายกว่าเมนูจานหลักอีกจาน
  */
 const suggestions = computed(() => {
-    const inCart = new Set(cart.lines.value.map((l) => l.product_id))
+    const inCart = new Set(
+        isShared.value
+            ? shared.lines.value.map((l) => l.product_id)
+            : cart.lines.value.map((l) => l.product_id),
+    )
     const promoIds = new Set(props.promo.items.map((p) => p.id))
 
     return props.products
@@ -201,6 +236,34 @@ const suggestions = computed(() => {
         })
         .slice(0, 8)
 })
+
+/*
+|--------------------------------------------------------------------------
+| ตะกร้าใบที่ใช้อยู่ — หน้าจอมองผ่านสามตัวนี้ตัวเดียว
+|--------------------------------------------------------------------------
+|
+| แปลงให้เป็นรูปแบบเดียวกันตรงนี้ที่เดียว เทมเพลตกับ CartSheet จะได้ไม่ต้องมี
+| v-if แยกสองทางกระจายไปทั่ว ซึ่งเป็นที่ที่บั๊ก "แก้ทางหนึ่งลืมอีกทาง" ชอบเกิด
+*/
+
+const cartLines = computed<SheetLine[]>(() =>
+    isShared.value
+        ? shared.lines.value.map((l) => ({
+            // id ของแถวในตาราง คือคีย์อ้างอิงตอนสั่งแก้ ต้องแปลงกลับเป็นเลขที่ onSetQty
+            key: String(l.id),
+            name: l.name,
+            qty: l.qty,
+            unit_price: l.unit_price,
+            modifier_names: l.modifier_names,
+            note: l.note,
+            guest_name: l.guest_name,
+            mine: l.mine,
+        }))
+        : cart.lines.value,
+)
+
+const cartCount = computed(() => (isShared.value ? shared.count.value : cart.count.value))
+const cartTotal = computed(() => (isShared.value ? shared.total.value : cart.total.value))
 
 function openProduct(p: Product) {
     if (!canOrder.value) return
@@ -215,7 +278,17 @@ function onAdd(
     itemNote: string | null,
     unitPrice: number,
 ) {
-    cart.add(product, qty, modifierIds, modifierNames, itemNote, unitPrice)
+    if (isShared.value) {
+        /*
+        | ตะกร้าร่วมไม่รับราคาจากหน้าเว็บ เซิร์ฟเวอร์คิดเองจากราคาสาขา
+        | ชื่อตัวเลือกก็ไม่ส่ง เพราะเซิร์ฟเวอร์อ่านจาก id ตอนสรุปตะกร้าอยู่แล้ว
+        | ถ้าเชื่อค่าที่ client ส่งมา ใครก็ตั้งราคาให้ตัวเองได้
+        */
+        shared.add(product.id, qty, modifierIds, itemNote)
+    } else {
+        cart.add(product, qty, modifierIds, modifierNames, itemNote, unitPrice)
+    }
+
     sheetProduct.value = null
 
     // ถามหลังหยิบของชิ้นแรก ตอนที่เหตุผลของคำถามชัดแล้ว
@@ -260,7 +333,104 @@ function callForBill() {
     )
 }
 
+/** ปุ่มเพิ่ม/ลด/ลบ ในแผ่นตะกร้า — คีย์เป็น string ทั้งสองแบบ แปลงกลับตรงนี้ */
+function onSetQty(key: string, qty: number) {
+    if (isShared.value) {
+        shared.setQty(Number(key), qty)
+        return
+    }
+
+    cart.setQty(key, qty)
+}
+
+function onClearCart() {
+    if (isShared.value) shared.clear()
+}
+
+/*
+|--------------------------------------------------------------------------
+| ส่งตะกร้าร่วมเข้าครัว
+|--------------------------------------------------------------------------
+|
+| กดแล้วยังไม่ส่ง — ตั้งนาฬิกา 5 วินาทีไว้ที่เซิร์ฟเวอร์ก่อน ทุกเครื่องที่โต๊ะ
+| เห็นนาฬิกาเดียวกันจากรอบ poll และกดยกเลิกได้ทุกคน พอครบเวลา เครื่องของ
+| คนที่กดเป็นคนยิงคำสั่งส่งจริง
+|
+| ทำไมไม่ให้เซิร์ฟเวอร์ส่งเองเมื่อครบเวลา: ต้องมีคิวหรือ scheduler มาคอยกวาด
+| ซึ่งเครื่องร้านนี้ไม่มี (ไม่มี SQL Server Agent ด้วยซ้ำ) ให้เครื่องที่กดยิงเอง
+| ง่ายกว่ามาก และถ้าเครื่องเขาดับไปก่อน เซิร์ฟเวอร์ล้างธงที่ค้างเกินนาทีทิ้งเอง
+*/
+
+/** กันไม่ให้นาฬิกาที่เดินทุก 200ms ยิงคำสั่งส่งจริงซ้ำหลายรอบ */
+const confirming = ref(false)
+const submittedOrderNo = ref<string | null>(null)
+
+/*
+| ลองใหม่ได้กี่ครั้งถ้าเซิร์ฟเวอร์บอกว่า "ยังไม่ถึงเวลา"
+|
+| นาฬิกาในมือถือลูกค้ากับนาฬิกาของเซิร์ฟเวอร์ไม่ตรงกันเป๊ะ เครื่องที่เร็วกว่าอยู่สองวินาที
+| จะยิงคำสั่งส่งจริงก่อนกำหนดแล้วโดนปฏิเสธ ถ้าไม่ลองใหม่ นาฬิกาจะค้างอยู่บนจอทั้งโต๊ะ
+| จนกว่าเซิร์ฟเวอร์จะล้างธงที่ค้างเกินนาที ซึ่งนานเกินกว่าที่ใครจะรอไหว
+|
+| จำกัดจำนวนครั้งไว้ เพราะถ้าพลาดด้วยเหตุผลอื่น (มีคนยกเลิกไปแล้ว / ตะกร้าว่าง)
+| การลองซ้ำไม่มีวันสำเร็จ มีแต่จะยิงรัวจนโดน rate limit ของทั้งโต๊ะ
+*/
+const MAX_CONFIRM_RETRIES = 6
+let confirmRetries = 0
+
+async function fireSubmit() {
+    if (confirming.value) return
+
+    confirming.value = true
+    processing.value = true
+
+    try {
+        const orderNo = await shared.confirmSubmit({
+            name: name.value,
+            phone: phone.value,
+            payment_intent: paymentIntent.value,
+            note: note.value || null,
+        })
+
+        if (orderNo) {
+            confirmRetries = 0
+            submittedOrderNo.value = orderNo
+            step.value = 'menu'
+            // บิลเพิ่งโตขึ้น รอบถัดไปยังอีกหลายวินาที ดึงเลยไม่ให้ลูกค้าเห็นของเก่า
+            refreshBill()
+            return
+        }
+
+        // ล้มเหลวแต่นาฬิกายังเดินอยู่ = น่าจะแค่เร็วไปนิดเดียว รอแล้วลองใหม่
+        if (shared.isCounting.value && confirmRetries < MAX_CONFIRM_RETRIES) {
+            confirmRetries += 1
+            setTimeout(fireSubmit, 1000)
+        }
+    } finally {
+        confirming.value = false
+        processing.value = false
+    }
+}
+
+watch(
+    () => shared.isDue.value && shared.submitIsMine.value,
+    (due) => {
+        if (!due) {
+            confirmRetries = 0
+            return
+        }
+
+        fireSubmit()
+    },
+)
+
 function submit() {
+    // โหมดร่วม: ปุ่มนี้แปลว่า "เริ่มนับถอยหลัง" ไม่ใช่ "ส่งเดี๋ยวนี้"
+    if (isShared.value) {
+        shared.requestSubmit()
+        return
+    }
+
     processing.value = true
     errors.value = {}
 
@@ -644,7 +814,7 @@ function submit() {
             ปุ่มตะกร้าจะถูกแถบบิลบัง ซึ่งเป็นปุ่มที่ลูกค้าต้องกดมากที่สุด
         -->
         <div
-            v-if="step === 'menu' && (bill || cart.count.value > 0)"
+            v-if="step === 'menu' && (bill || cartCount > 0)"
             class="fixed inset-x-0 bottom-0 z-30 border-t bg-card/95 backdrop-blur"
         >
             <div
@@ -675,7 +845,7 @@ function submit() {
                     <ChevronRight class="size-4 shrink-0 text-muted-foreground" />
                 </button>
 
-                <template v-if="cart.count.value > 0">
+                <template v-if="cartCount > 0">
                 <!-- ป้ายระบุรูปแบบการสั่งปัจจุบัน (ทานที่ร้าน vs รับที่ร้าน) -->
                 <div class="mb-2 flex items-center justify-center">
                     <p
@@ -696,9 +866,81 @@ function submit() {
 
                 <Button variant="brand" size="xl" class="w-full shadow-lg" @click="step = 'cart'">
                     <ShoppingBag />
-                    ดูตะกร้า · {{ number(cart.count.value) }} รายการ · {{ money(cart.total.value) }} ฿
+                    {{ isShared ? 'ดูตะกร้าของโต๊ะ' : 'ดูตะกร้า' }} · {{ number(cartCount) }} รายการ · {{ money(cartTotal) }} ฿
                 </Button>
                 </template>
+            </div>
+        </div>
+
+        <!-- ══ นับถอยหลังส่งเข้าครัว ══ -->
+        <!--
+            z สูงกว่าแผ่นตะกร้า (z-40) โดยตั้งใจ — คนที่กำลังเปิดตะกร้าอยู่คือคนที่
+            ต้องเห็นมากที่สุด ถ้าแถบนี้ไปอยู่ใต้แผ่น เขาจะไม่รู้เลยว่าอีกเครื่องกดส่งแล้ว
+            แล้วจะเจอตะกร้าว่างเปล่าแบบไม่มีคำอธิบาย
+        -->
+        <div
+            v-if="shared.isCounting.value"
+            class="fixed inset-x-0 top-0 z-50 border-b border-[var(--series-1)]/40 bg-[var(--series-1)] text-white shadow-lg"
+            role="alert"
+            aria-live="assertive"
+        >
+            <div
+                class="mx-auto flex max-w-2xl items-center gap-3 px-4 py-3 lg:max-w-5xl"
+                :style="{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top, 0px))' }"
+            >
+                <span
+                    class="tabular grid size-11 shrink-0 place-items-center rounded-full bg-white/20 text-xl font-bold"
+                    aria-hidden="true"
+                >
+                    {{ shared.secondsLeft.value }}
+                </span>
+
+                <p class="min-w-0 flex-1 text-sm leading-tight">
+                    <b class="block text-base">กำลังส่งตะกร้าเข้าครัว</b>
+                    <span class="text-white/90">
+                        <template v-if="shared.submitIsMine.value">คุณกดส่ง</template>
+                        <template v-else-if="shared.submitBy.value">{{ shared.submitBy.value }} กดส่ง</template>
+                        <template v-else>มีคนที่โต๊ะกดส่ง</template>
+                        · กดยกเลิกได้ทุกคนจนกว่าจะครบเวลา
+                    </span>
+                </p>
+
+                <button
+                    type="button"
+                    class="shrink-0 rounded-full bg-white px-4 py-2 text-sm font-semibold text-[var(--series-1)] transition-transform active:scale-95 disabled:opacity-60"
+                    :disabled="shared.busy.value"
+                    @click="shared.cancelSubmit()"
+                >
+                    ยกเลิก
+                </button>
+            </div>
+        </div>
+
+        <!-- ══ ส่งเข้าครัวสำเร็จ ══ -->
+        <!-- อยู่คนละที่กับแถบนับถอยหลังไม่ได้ ตะกร้าว่างเปล่าเฉย ๆ อ่านเหมือนของหาย -->
+        <div
+            v-if="submittedOrderNo"
+            class="fixed inset-x-0 top-0 z-50 border-b bg-[var(--status-success,#16a34a)] text-white shadow-lg"
+            role="status"
+        >
+            <div
+                class="mx-auto flex max-w-2xl items-center gap-3 px-4 py-3 lg:max-w-5xl"
+                :style="{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top, 0px))' }"
+            >
+                <Check class="size-5 shrink-0" />
+
+                <p class="min-w-0 flex-1 text-sm leading-tight">
+                    <b class="block text-base">ส่งเข้าครัวแล้ว</b>
+                    <span class="text-white/90">เลขที่ {{ submittedOrderNo }} · ดูสถานะได้ที่แถบบิลด้านล่าง</span>
+                </p>
+
+                <button
+                    type="button"
+                    class="shrink-0 rounded-full bg-white/20 px-3 py-1.5 text-sm font-semibold transition-transform active:scale-95"
+                    @click="submittedOrderNo = null"
+                >
+                    ปิด
+                </button>
             </div>
         </div>
 
@@ -734,8 +976,8 @@ function submit() {
             v-model:payment-intent="paymentIntent"
             v-model:note="note"
             v-model:staff-table-id="staffTableId"
-            :lines="cart.lines.value"
-            :total="cart.total.value"
+            :lines="cartLines"
+            :total="cartTotal"
             :suggestions="suggestions"
             :payment-intents="paymentIntents"
             :earliest-pickup-at="branch.earliest_pickup_at"
@@ -747,9 +989,14 @@ function submit() {
             :points="points"
             :processing="processing"
             :errors="errors"
+            :shared="isShared"
+            :cart-busy="shared.busy.value"
+            :cart-locked="shared.isCounting.value"
+            :cart-error="shared.error.value"
             @close="step = 'menu'"
             @submit="submit"
-            @set-qty="cart.setQty"
+            @set-qty="onSetQty"
+            @clear="onClearCart"
             @pick="openProduct"
         />
     </div>

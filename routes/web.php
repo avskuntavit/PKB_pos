@@ -229,6 +229,17 @@ Route::middleware(['auth', 'permission:backoffice.access'])
             Route::post('periods/reopen', [BackOffice\PeriodController::class, 'reopen'])->name('periods.reopen');
         });
 
+        /*
+        | เงินที่รับจากลูกค้าตอนระบบล่ม แต่ลงบิลไม่ได้
+        |
+        | ใช้สิทธิ์เดียวกับการตรวจว่าเงินสดเข้าบัญชีจริง เพราะเป็นคำถามเดียวกัน
+        | คือ "เงินก้อนนี้ไปไหน" และผู้จัดการมีสิทธิ์นี้อยู่แล้วโดยไม่ต้องเพิ่มของใหม่
+        */
+        Route::middleware('permission:cash.settle_verify')->group(function () {
+            Route::get('offline-holds', [BackOffice\OfflineHoldController::class, 'index'])->name('offline-holds.index');
+            Route::post('offline-holds/{entry}/resolve', [BackOffice\OfflineHoldController::class, 'resolve'])->name('offline-holds.resolve');
+        });
+
         Route::middleware('permission:system.health')->group(function () {
             Route::get('health', [BackOffice\HealthController::class, 'index'])->name('health');
             Route::post('health/backup', [BackOffice\HealthController::class, 'backup'])->name('health.backup');
@@ -282,6 +293,17 @@ Route::middleware('auth')
         Route::get('health', Pos\HealthController::class)
             ->middleware('throttle:120,1')
             ->name('health');
+
+        /*
+        | คิวที่ค้างในแท็บเล็ตตอนเน็ตหลุด ส่งขึ้นมาทีเดียวทั้งก้อน
+        |
+        | throttle หลวมกว่าเส้นอื่นโดยตั้งใจ — พอเน็ตกลับมา ทุกเครื่องในร้าน
+        | จะซิงก์พร้อมกันในไม่กี่วินาที ถ้าตั้งแน่นเกินจะกลายเป็นเครื่องที่สาม
+        | ส่งไม่ได้เพราะโดนกันเอง ทั้งที่นั่นคือช่วงที่ต้องปล่อยให้ผ่านที่สุด
+        */
+        Route::post('offline/sync', [Pos\OfflineSyncController::class, 'store'])
+            ->middleware('throttle:60,1')
+            ->name('offline.sync');
 
         Route::get('/', [Pos\PosController::class, 'tables'])->name('tables');
         Route::get('terminal/{order?}', [Pos\PosController::class, 'terminal'])->name('terminal');
@@ -402,10 +424,34 @@ Route::prefix('order')
             ->middleware('throttle:10,1')
             ->name('table.open-request');
 
-        // บิลของโต๊ะ — ต้องประกาศก่อน {branchCode} ไม่งั้น "bill" จะถูกอ่านเป็นรหัสร้าน
+        /*
+        | บิลของโต๊ะ — ต้องประกาศก่อน {branchCode} ไม่งั้น "bill" จะถูกอ่านเป็นรหัสร้าน
+        |
+        | ใช้ตัวจำกัดชื่อ selforder ซึ่งนับตามโต๊ะ ไม่ใช่ตาม IP
+        | ทั้งร้านใช้ไวไฟตัวเดียวกัน มือถือทุกโต๊ะจึงมี IP เดียวกัน พอตะกร้าร่วมต้อง
+        | ถามถี่ขึ้น (ให้นาฬิกานับถอยหลังตรงกันทั้งโต๊ะ) โควตาต่อ IP จะถูกโต๊ะอื่นใช้หมดก่อน
+        | รายละเอียดอยู่ที่ AppServiceProvider::registerSelfOrderLimiter()
+        */
         Route::get('bill', [Storefront\TableBillController::class, 'feed'])
-            ->middleware('throttle:60,1')
+            ->middleware('throttle:selforder')
             ->name('bill');
+
+        /*
+        | ตะกร้าร่วมของโต๊ะ — โต๊ะมาจาก session เท่านั้น ไม่มีพารามิเตอร์ให้ระบุ
+        |
+        | cart/submit* ต้องประกาศก่อน cart/{item} ไม่งั้นคำว่า submit จะถูกอ่านเป็นเลขรายการ
+        | (กับดักเดิมของโปรเจกต์นี้ที่เจอมาแล้วหลายรอบ)
+        */
+        Route::middleware('throttle:selforder')->group(function () {
+            Route::post('cart/submit', [Storefront\TableCartController::class, 'requestSubmit'])->name('cart.submit');
+            Route::post('cart/submit/cancel', [Storefront\TableCartController::class, 'cancelSubmit'])->name('cart.submit.cancel');
+            Route::post('cart/submit/confirm', [Storefront\TableCartController::class, 'confirmSubmit'])->name('cart.submit.confirm');
+
+            Route::post('cart', [Storefront\TableCartController::class, 'store'])->name('cart.store');
+            Route::delete('cart', [Storefront\TableCartController::class, 'clear'])->name('cart.clear');
+            Route::patch('cart/{item}', [Storefront\TableCartController::class, 'update'])->name('cart.update');
+            Route::delete('cart/{item}', [Storefront\TableCartController::class, 'destroy'])->name('cart.destroy');
+        });
         Route::post('bill/call', [Storefront\TableBillController::class, 'call'])
             ->middleware('throttle:10,1')
             ->name('bill.call');
@@ -463,13 +509,23 @@ Route::prefix('t/{qrToken}')
     ->middleware(ResolveTableSession::class)
     ->name('selforder.')
     ->group(function () {
+        /*
+        | ใช้ตัวจำกัดชื่อ selforder ซึ่งนับตาม "รอบการนั่งโต๊ะ" ไม่ใช่ตาม IP
+        |
+        | ทั้งร้านใช้ไวไฟตัวเดียวกัน มือถือทุกโต๊ะจึงออกเน็ตด้วย IP เดียวกัน
+        | พอตะกร้าร่วมทำให้ต้องถามสถานะถี่ขึ้น (เพื่อให้นาฬิกานับถอยหลังตรงกันทั้งโต๊ะ)
+        | โควตาต่อ IP จะถูกโต๊ะอื่นใช้หมดก่อน แล้วลูกค้าที่ไม่ได้ทำอะไรผิดจะกดอะไรไม่ได้
+        | รายละเอียดอยู่ที่ AppServiceProvider::registerSelfOrderLimiter()
+        */
         Route::get('status', [SelfOrder\StatusController::class, 'show'])
-            ->middleware('throttle:60,1')
+            ->middleware('throttle:selforder')
             ->name('status');
 
         Route::post('orders', [SelfOrder\OrderController::class, 'store'])
             ->middleware('throttle:20,1')
             ->name('orders.store');
+
+
 
         Route::post('call', [SelfOrder\ServiceCallController::class, 'store'])
             ->middleware('throttle:10,1')

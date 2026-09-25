@@ -60,17 +60,7 @@ class OnlineOrderService
     ): Order {
         $this->guard($branch, $lines, $staff);
 
-        /*
-        | $member ต้องอยู่ในรายการ use ด้วย — เคยตกหล่นไป
-        |
-        | ข้างในเขียนว่า `$customer = $member ?? $this->linkCustomer($branch, $contact)`
-        | พอ $member ไม่ถูกส่งเข้ามา PHP มองเป็น null ทุกครั้ง แล้วตกไปเดาจากเบอร์ที่พิมพ์เสมอ
-        |
-        | ผลที่ตามมาหนักกว่าเรื่องส่วนลด: ลูกค้าที่ล็อกอินอยู่แล้วพิมพ์เบอร์คนอื่นตอนสั่ง
-        | บิลจะไปผูกกับบัญชีของเจ้าของเบอร์นั้น — แต้มและประวัติการสั่งเข้าบัญชีผิดคน
-        | และสิทธิ์สวัสดิการพนักงานก็คิดจากบัญชีที่เดาได้ ไม่ใช่บัญชีที่ล็อกอินอยู่จริง
-        */
-        return DB::transaction(function () use ($branch, $lines, $contact, $type, $pickupAt, $intent, $staff, $table, $member, $guestName) {
+        return DB::transaction(function () use ($branch, $lines, $contact, $type, $pickupAt, $intent, $staff, $table, $guestName) {
             $placedByStaff = $staff !== null;
 
             /*
@@ -151,7 +141,16 @@ class OnlineOrderService
                     continue;
                 }
 
-                $this->addItem($order, $product, (float) $line['qty'], $line['modifier_ids'] ?? [], $line['note'] ?? null, $placedByStaff, $round, $guestName);
+                /*
+                | ชื่อคนสั่งเป็นรายบรรทัดได้ ไม่ใช่ชื่อเดียวทั้งบิล
+                |
+                | ตะกร้าร่วมของโต๊ะมีหลายคนใส่ของลงตะกร้าเดียวกัน แล้วใครคนหนึ่งกดส่ง
+                | ถ้าใช้ชื่อคนกดทั้งบิล จานของทุกคนจะขึ้นชื่อคนเดียวกันหมด
+                | แล้วบิลโต๊ะจะแยกรายคนไม่ได้ ซึ่งเป็นเหตุผลหลักที่เก็บชื่อไว้ตั้งแต่แรก
+                |
+                | หน้าเช็คเอาต์ปกติไม่ได้ส่ง guest_name มาในแต่ละบรรทัด จึงถอยไปใช้ชื่อเดียวทั้งบิลเหมือนเดิม
+                */
+                $this->addItem($order, $product, (float) $line['qty'], $line['modifier_ids'] ?? [], $line['note'] ?? null, $placedByStaff, $round, $line['guest_name'] ?? $guestName);
             }
 
             if ($order->items()->count() === 0) {

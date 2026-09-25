@@ -29,8 +29,7 @@ import Input from '@/components/ui/Input.vue'
 import Label from '@/components/ui/Label.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import { money } from '@/lib/format'
-import type { CartLine } from '@/composables/useGuestCart'
-import type { PageProps, Product } from '@/types'
+import type { PageProps, Product, SheetLine } from '@/types'
 
 interface PaymentOption {
     value: string
@@ -40,7 +39,7 @@ interface PaymentOption {
 }
 
 const props = defineProps<{
-    lines: CartLine[]
+    lines: SheetLine[]
     total: number
     /** เมนูที่เอาไปเสนอเพิ่ม — หน้าแม่คัดมาให้แล้ว */
     suggestions: Product[]
@@ -59,6 +58,19 @@ const props = defineProps<{
     points: { baht_per_point: number; enabled: boolean }
     processing: boolean
     errors: Record<string, string>
+    /**
+     * ตะกร้าร่วมของโต๊ะหรือเปล่า
+     *
+     * โหมดร่วมไม่ได้ต่างที่หน้าตาอย่างเดียว แต่ต่างที่ความหมายของปุ่มด้วย
+     * กดแล้วไม่ได้ส่งทันที แต่เป็นการตั้งนาฬิกาให้ทั้งโต๊ะเห็นและทักท้วงได้ก่อน
+     */
+    shared?: boolean
+    /** กำลังรอคำตอบจากเซิร์ฟเวอร์ — ปิดปุ่มไว้ไม่ให้กดรัวจนรายการเพี้ยน */
+    cartBusy?: boolean
+    /** มีคนกดส่งค้างอยู่ — ระหว่างนี้ห้ามแก้ตะกร้า ไม่งั้นของที่เข้าครัวจะไม่ตรงกับที่เห็น */
+    cartLocked?: boolean
+    /** ข้อความผิดพลาดจากตะกร้าร่วม เช่น "มีคนลบรายการนี้ไปแล้ว" */
+    cartError?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -66,6 +78,8 @@ const emit = defineEmits<{
     submit: []
     setQty: [key: string, qty: number]
     pick: [product: Product]
+    /** ล้างตะกร้าทั้งใบ — มีเฉพาะโหมดร่วม ตะกร้าส่วนตัวลบทีละบรรทัดพอ */
+    clear: []
 }>()
 
 /** 'now' = ใช้เวลาปัจจุบัน / 'scheduled' = ลูกค้าเลือกเวลาเอง */
@@ -140,8 +154,14 @@ const canSubmit = computed(
     () => props.lines.length > 0
         && name.value.trim().length > 0
         && phone.value.trim().length >= 9
-        && !props.processing,
+        && !props.processing
+        // โหมดร่วม: มีคนกดส่งค้างอยู่แล้ว กดซ้ำไม่ได้ทำให้เร็วขึ้น มีแต่จะยิงซ้ำเปล่า ๆ
+        && !props.cartLocked
+        && !props.cartBusy,
 )
+
+/** แก้ตะกร้าไม่ได้ตอนนับถอยหลัง — ของที่เข้าครัวต้องตรงกับของที่ทั้งโต๊ะเห็นตอนกด */
+const canEditLines = computed(() => !props.cartLocked && !props.cartBusy)
 </script>
 
 <template>
@@ -155,7 +175,7 @@ const canSubmit = computed(
             >
                 <ChevronLeft class="size-5" />
             </button>
-            <h2 class="text-lg font-bold">ตะกร้าของฉัน</h2>
+            <h2 class="text-lg font-bold">{{ shared ? 'ตะกร้าของโต๊ะ' : 'ตะกร้าของฉัน' }}</h2>
         </header>
 
         <!-- ══ แถบสถานะประเภทการสั่ง (ชัดเจนทั้งทานที่ร้าน และ รับที่ร้าน) ══ -->
@@ -227,7 +247,9 @@ const canSubmit = computed(
                 <template v-else>
                     <!-- ══ รายการในตะกร้า ══ -->
                     <div class="flex items-center justify-between gap-3 px-4 pb-2 pt-4">
-                        <h3 class="text-lg font-bold">ตะกร้าของฉัน ({{ lines.length }})</h3>
+                        <h3 class="text-lg font-bold">
+                            {{ shared ? 'ตะกร้าของโต๊ะ' : 'ตะกร้าของฉัน' }} ({{ lines.length }})
+                        </h3>
                         <button
                             type="button"
                             class="flex shrink-0 items-center text-sm font-medium text-[var(--series-1)] transition-colors hover:opacity-80"
@@ -238,6 +260,24 @@ const canSubmit = computed(
                         </button>
                     </div>
 
+                    <!-- ══ ตะกร้านี้ทั้งโต๊ะเห็นร่วมกัน ══ -->
+                    <!-- ต้องบอกตรง ๆ ก่อนลูกค้ากดลบของคนอื่นโดยไม่รู้ว่าลบจริง -->
+                    <p
+                        v-if="shared"
+                        class="mx-4 mb-2 rounded-lg border border-[var(--series-1)]/30 bg-[var(--series-1)]/10 px-3 py-2 text-xs"
+                    >
+                        ทุกคนที่โต๊ะนี้เห็นตะกร้าใบเดียวกัน และแก้จำนวนหรือลบรายการของกันได้
+                        เมื่อกดส่ง จะนับถอยหลังให้ทุกคนทักท้วงก่อน
+                    </p>
+
+                    <p
+                        v-if="cartError"
+                        class="mx-4 mb-2 rounded-lg border border-[var(--status-critical)]/30 bg-[var(--status-critical)]/10 px-3 py-2 text-xs text-[var(--status-critical)]"
+                        role="alert"
+                    >
+                        {{ cartError }}
+                    </p>
+
                     <ul class="divide-y border-y">
                         <li v-for="line in lines" :key="line.key" class="px-4 py-3">
                             <CartLineBody
@@ -246,11 +286,13 @@ const canSubmit = computed(
                                 :modifier-names="line.modifier_names"
                                 :note="line.note"
                                 :unit-price="line.unit_price"
+                                :ordered-by="shared ? line.guest_name : null"
                             >
                                 <template #actions>
                                     <button
                                         type="button"
-                                        class="mt-1.5 text-sm font-medium text-[var(--series-1)]"
+                                        class="mt-1.5 text-sm font-medium text-[var(--series-1)] disabled:opacity-50"
+                                        :disabled="!canEditLines"
                                         @click="toggleEdit(line.key)"
                                     >
                                         {{ editing === line.key ? 'เสร็จแล้ว' : 'แก้ไข' }}
@@ -262,8 +304,9 @@ const canSubmit = computed(
                             <div v-if="editing === line.key" class="mt-2 flex items-center gap-1 ps-10">
                                 <button
                                     type="button"
-                                    class="grid size-9 place-items-center rounded-full bg-muted transition-transform active:scale-90"
+                                    class="grid size-9 place-items-center rounded-full bg-muted transition-transform active:scale-90 disabled:opacity-50"
                                     aria-label="ลดจำนวน"
+                                    :disabled="!canEditLines"
                                     @click="emit('setQty', line.key, line.qty - 1)"
                                 >
                                     <Minus class="size-4" />
@@ -271,16 +314,18 @@ const canSubmit = computed(
                                 <span class="tabular w-10 text-center text-base">{{ line.qty }}</span>
                                 <button
                                     type="button"
-                                    class="grid size-9 place-items-center rounded-full bg-muted transition-transform active:scale-90"
+                                    class="grid size-9 place-items-center rounded-full bg-muted transition-transform active:scale-90 disabled:opacity-50"
                                     aria-label="เพิ่มจำนวน"
+                                    :disabled="!canEditLines"
                                     @click="emit('setQty', line.key, line.qty + 1)"
                                 >
                                     <Plus class="size-4" />
                                 </button>
                                 <button
                                     type="button"
-                                    class="ms-auto grid size-9 place-items-center rounded-full text-[var(--status-critical)] transition-colors active:bg-accent"
+                                    class="ms-auto grid size-9 place-items-center rounded-full text-[var(--status-critical)] transition-colors active:bg-accent disabled:opacity-50"
                                     aria-label="ลบรายการนี้"
+                                    :disabled="!canEditLines"
                                     @click="emit('setQty', line.key, 0)"
                                 >
                                     <Trash2 class="size-4" />
@@ -326,6 +371,19 @@ const canSubmit = computed(
                             </li>
                         </ul>
                     </section>
+
+                    <!-- ══ ล้างตะกร้าทั้งใบ ══ -->
+                    <!-- มีเฉพาะโหมดร่วม เพราะตะกร้าโต๊ะสะสมของหลายคนจนลบทีละบรรทัดไม่ไหว -->
+                    <div v-if="shared" class="px-4 pt-3">
+                        <button
+                            type="button"
+                            class="text-sm font-medium text-[var(--status-critical)] disabled:opacity-50"
+                            :disabled="!canEditLines"
+                            @click="emit('clear')"
+                        >
+                            ล้างตะกร้าทั้งโต๊ะ
+                        </button>
+                    </div>
 
                     <!-- ══ ยอดรวม ══ -->
                     <div class="mt-4 flex items-center justify-between gap-3 border-y bg-card px-4 py-4">
@@ -691,7 +749,11 @@ const canSubmit = computed(
                     @click="emit('submit')"
                 >
                     <template v-if="processing">กำลังส่งรายการ…</template>
+                    <template v-else-if="cartLocked">กำลังนับถอยหลังส่งเข้าครัว…</template>
                     <template v-else-if="!name.trim() || phone.trim().length < 9">กรอกชื่อและเบอร์โทรก่อน</template>
+                    <template v-else-if="shared && currentTable">
+                        ส่งตะกร้าของโต๊ะเข้าครัว · ฿{{ money(total) }}
+                    </template>
                     <template v-else-if="currentTable">
                         ส่งรายการเข้าครัว (โต๊ะ {{ currentTable.name }}) · ฿{{ money(total) }}
                     </template>
@@ -701,7 +763,11 @@ const canSubmit = computed(
                 </button>
 
                 <p class="px-2 pb-1 pt-2 text-center text-xs text-muted-foreground">
-                    <template v-if="currentTable">
+                    <template v-if="shared">
+                        กดแล้วจะนับถอยหลัง 5 วินาที ทุกเครื่องที่โต๊ะ {{ currentTable?.name }} เห็นพร้อมกันและกดยกเลิกได้ ·
+                        รายการจะรวมไว้ในบิลโต๊ะและชำระเงินทีเดียวเมื่อทานเสร็จ ({{ itemCount }} รายการ)
+                    </template>
+                    <template v-else-if="currentTable">
                         ✨ สั่งเพิ่มได้ตลอดมื้อ · รายการจะรวมไว้ในบิลโต๊ะ {{ currentTable.name }} และชำระเงินทีเดียวเมื่อทานเสร็จ ({{ itemCount }} รายการ)
                     </template>
                     <template v-else>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { Head, useForm } from '@inertiajs/vue3'
 import { Plus } from 'lucide-vue-next'
 import BackOfficeLayout from '@/layouts/BackOfficeLayout.vue'
@@ -16,7 +16,10 @@ import Modal from '@/components/ui/Modal.vue'
 import { date, money, number } from '@/lib/format'
 import type { Paginated } from '@/types'
 
-defineProps<{ vouchers: Paginated<Record<string, any>> }>()
+const props = defineProps<{
+    vouchers: Paginated<Record<string, any>>
+    bases: Array<{ value: string; label: string; hint: string }>
+}>()
 
 const showModal = ref(false)
 
@@ -30,7 +33,14 @@ const form = useForm({
     usage_limit: 1,
     starts_at: '',
     ends_at: '',
+    // ค่าเริ่มต้นเป็นพฤติกรรมเดิมของระบบ คนที่ไม่รู้ว่าต้องเลือกอะไรจะได้ของเดิม
+    base_mode: 'menu_total',
 })
+
+/** คำอธิบายของตัวเลือกที่กำลังเลือกอยู่ — โชว์ใต้ช่องเลย ไม่ต้องเดา */
+const baseHint = computed(() => props.bases.find((b) => b.value === form.base_mode)?.hint ?? '')
+
+const baseLabel = (value: string) => props.bases.find((b) => b.value === value)?.label ?? value
 
 function submit() {
     form.post('/backoffice/vouchers', {
@@ -61,6 +71,7 @@ function submit() {
                         <th>รหัส</th>
                         <th>ชื่อ</th>
                         <th class="text-right">มูลค่า</th>
+                        <th>ฐานที่ใช้คิด</th>
                         <th class="text-right">ใช้ไป/จำกัด</th>
                         <th>หมดอายุ</th>
                         <th>สถานะ</th>
@@ -73,6 +84,7 @@ function submit() {
                         <td class="tabular text-right">
                             {{ v.type === 'percent' ? `${v.value}%` : money(v.value) }}
                         </td>
+                        <td class="text-muted-foreground">{{ baseLabel(v.base_mode) }}</td>
                         <td class="tabular text-right">
                             {{ number(v.used_count) }}/{{ number(v.usage_limit) }}
                         </td>
@@ -96,6 +108,9 @@ function submit() {
                     <div class="space-y-1">
                         <Label for="vcode">รหัส</Label>
                         <Input id="vcode" v-model="form.code" required placeholder="SAVE50" />
+                        <p v-if="form.errors.code" class="text-xs text-[var(--status-critical)]">
+                            {{ form.errors.code }}
+                        </p>
                     </div>
                     <div class="space-y-1">
                         <Label for="vlimit">จำกัดการใช้ (ครั้ง)</Label>
@@ -120,6 +135,29 @@ function submit() {
                         <Label for="vvalue">มูลค่า</Label>
                         <Input id="vvalue" v-model="form.value" type="number" step="0.01" min="0" required />
                     </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="space-y-1">
+                        <Label for="vmin">ยอดขั้นต่ำ (บาท)</Label>
+                        <Input id="vmin" v-model="form.min_spend" type="number" step="0.01" min="0" />
+                        <p v-if="form.errors.min_spend" class="text-xs text-[var(--status-critical)]">
+                            {{ form.errors.min_spend }}
+                        </p>
+                    </div>
+                    <div class="space-y-1">
+                        <Label for="vmax">ลดได้ไม่เกิน (บาท)</Label>
+                        <Input id="vmax" v-model="form.max_discount" type="number" step="0.01" min="0" placeholder="ไม่จำกัด" />
+                    </div>
+                </div>
+
+                <!-- ฐานที่ใช้คิด — ตัวนี้เปลี่ยนความหมายของคูปองทั้งใบ จึงมีคำอธิบายกำกับ -->
+                <div class="space-y-1">
+                    <Label for="vbase">ฐานที่ใช้คิด (ทั้งยอดขั้นต่ำและมูลค่าที่ลด)</Label>
+                    <Select id="vbase" v-model="form.base_mode">
+                        <option v-for="b in bases" :key="b.value" :value="b.value">{{ b.label }}</option>
+                    </Select>
+                    <p class="text-xs text-muted-foreground">{{ baseHint }}</p>
                 </div>
 
                 <div class="grid grid-cols-2 gap-3">

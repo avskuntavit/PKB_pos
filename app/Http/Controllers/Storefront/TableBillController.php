@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Storefront;
 
 use App\Models\DiningTable;
 use App\Services\TableBillService;
+use App\Services\TableCartService;
+use App\Services\TableSessionService;
 use App\Support\StorefrontSession;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -19,11 +21,31 @@ class TableBillController extends StorefrontController
 {
     public function __construct(protected TableBillService $bills) {}
 
-    /** JSON สำหรับ poll — หน้าเมนูดึงซ้ำเพื่ออัปเดตสถานะรายจาน */
-    public function feed(Request $request, StorefrontSession $storefront): JsonResponse
-    {
+    /**
+     * JSON สำหรับ poll — หน้าเมนูดึงซ้ำเพื่ออัปเดตสถานะรายจาน
+     *
+     * ── ทำไมตะกร้าร่วมมาเกาะอยู่ตรงนี้ ────────────────────────────────────
+     * โต๊ะหนึ่งมีมือถือได้หลายเครื่อง ถ้าเปิด endpoint ใหม่ให้ถามตะกร้าต่างหาก
+     * จำนวนคำขอจะเป็นสองเท่าทันทีโดยไม่ได้อะไรเพิ่ม — บิลกับตะกร้าเปลี่ยนพร้อมกันอยู่แล้ว
+     *
+     * cart เป็น null เมื่อไม่ได้นั่งโต๊ะ (สั่งกลับบ้าน) ซึ่งยังใช้ตะกร้าในเบราว์เซอร์ตัวเอง
+     */
+    public function feed(
+        Request $request,
+        StorefrontSession $storefront,
+        TableCartService $carts,
+        TableSessionService $sessions,
+    ): JsonResponse {
+        $table = $this->seatedTable($request, $storefront);
+
         return response()->json([
-            'bill' => $this->bills->forTable($this->seatedTable($request, $storefront)),
+            'bill' => $this->bills->forTable($table),
+            'cart' => $table
+                ? $carts->summary(
+                    $sessions->resolve($table, $request->ip()),
+                    $storefront->guestKey($request),
+                )
+                : null,
         ]);
     }
 

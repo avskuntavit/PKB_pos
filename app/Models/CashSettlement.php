@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\CashSettlementStatus;
 use App\Models\Concerns\BelongsToBranch;
+use App\Support\Money;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -20,6 +21,7 @@ class CashSettlement extends Model
         return [
             'business_date' => 'date',
             'expected_amount' => 'decimal:2',
+            'held_cash_amount' => 'decimal:2',
             'counted_amount' => 'decimal:2',
             'transferred_amount' => 'decimal:2',
             'diff_amount' => 'decimal:2',
@@ -42,6 +44,19 @@ class CashSettlement extends Model
     public function verifiedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'verified_by');
+    }
+
+    /**
+     * ยอดที่พนักงานต้องนำส่งจริง
+     *
+     * = ยอดจากบิล + เงินสดที่รับมาแล้วตอนเน็ตหลุดแต่ยังไม่มีบิลรองรับ
+     *
+     * สองก้อนนี้เก็บแยกคอลัมน์เพราะ expected_amount ต้องคงความหมายว่า "มาจากบิล"
+     * แต่เวลาเทียบกับเงินที่โอนต้องใช้ยอดรวม ไม่งั้นเงินที่ค้างจะโผล่เป็น "เงินเกิน" ปริศนา
+     */
+    public function due(): float
+    {
+        return Money::round((float) $this->expected_amount + (float) $this->held_cash_amount);
     }
 
     /** ยังไม่จบเรื่อง — ผู้จัดการต้องตามต่อ */

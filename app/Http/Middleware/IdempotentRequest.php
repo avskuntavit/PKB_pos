@@ -88,6 +88,19 @@ class IdempotentRequest
     }
 
     /**
+     * สัญญาณว่าคำขอนี้ล้มเหลว
+     *
+     * 'errors'  = ฟอร์มไม่ผ่าน (withErrors)
+     * 'error'   = ถูกปฏิเสธด้วยเหตุผลทางธุรกิจ (back()->with('error', ...))
+     *
+     * ทั้งห้า endpoint ที่ใส่ด่านนี้ไว้ แจ้งความล้มเหลวด้วย with('error') ทั้งหมด
+     * เช่น "บิลนี้ถูกปิดไปแล้ว" ของหน้าชำระเงิน — ถ้าไม่นับตัวนี้เป็นความล้มเหลว
+     * คีย์จะถูกยึดไว้ทั้งที่ไม่มีอะไรถูกบันทึก แล้วการกดใหม่ด้วยคีย์เดิม
+     * จะได้คำตอบว่า "บันทึกไปแล้ว" — เป็นการโกหกพนักงานเรื่องเงิน
+     */
+    protected const FAILURE_FLASH_KEYS = ['errors', 'error'];
+
+    /**
      * คำขอนี้ล้มเหลวไหม
      *
      * เช็ค _flash.new ไม่ใช่ session('errors') ตรง ๆ
@@ -105,6 +118,8 @@ class IdempotentRequest
             return false;
         }
 
-        return in_array('errors', (array) $request->session()->get('_flash.new', []), true);
+        $flashed = (array) $request->session()->get('_flash.new', []);
+
+        return (bool) array_intersect(self::FAILURE_FLASH_KEYS, $flashed);
     }
 }

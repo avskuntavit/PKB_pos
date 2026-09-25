@@ -51,7 +51,7 @@ class SummaryReportService
                   COUNT(*) AS bill_count
                 , COALESCE(SUM({$o}.subtotal), 0) AS gross_sales
                 , COALESCE(SUM({$o}.item_discount), 0) AS item_discount
-                , COALESCE(SUM({$o}.bill_discount + {$o}.promotion_discount + {$o}.voucher_discount), 0) AS bill_discount
+                , COALESCE(SUM({$o}.bill_discount + {$o}.promotion_discount + {$o}.voucher_discount + {$o}.staff_discount), 0) AS bill_discount
                 , COALESCE(SUM({$o}.service_charge), 0) AS service_charge
                 , COALESCE(SUM({$o}.delivery_fee), 0) AS delivery_fee
                 , COALESCE(SUM({$o}.tax_amount), 0) AS tax_amount

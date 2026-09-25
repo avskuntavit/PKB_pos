@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\VoucherBase;
 use App\Models\Concerns\BelongsToBranch;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -16,6 +17,7 @@ class Voucher extends Model
     protected function casts(): array
     {
         return [
+            'base_mode' => VoucherBase::class,
             'value' => 'decimal:2',
             'min_spend' => 'decimal:2',
             'max_discount' => 'decimal:2',

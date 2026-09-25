@@ -31,6 +31,15 @@ class TrackController extends StorefrontController
             'promptPayPayload' => $order->payment_intent === PaymentIntent::PromptPay
                 ? $promptPay->forBranch($order->branch, (float) $order->grand_total)
                 : null,
+
+            /*
+            | ยอดอยู่ใน QR หรือต้องให้ลูกค้าพิมพ์เอง
+            |
+            | บิลยอดน้อยได้ QR แบบไม่ระบุยอด (ผู้ให้บริการบางเจ้าไม่ออกให้)
+            | ถ้าไม่บอกตรงนี้ ลูกค้าจะสแกนแล้วเจอช่องยอดว่างโดยไม่รู้ว่าต้องพิมพ์เท่าไหร่
+            | หรือแย่กว่านั้นคือพิมพ์มั่ว แล้วร้านได้เงินไม่ครบ
+            */
+            'promptPayHasAmount' => PromptPayService::carriesAmount((float) $order->grand_total),
         ]);
     }
 

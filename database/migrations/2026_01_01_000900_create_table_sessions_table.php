@@ -30,6 +30,20 @@ return new class extends Migration
             $table->timestamp('closed_at')->nullable();
             $table->string('closed_reason', 50)->nullable();    // paid|staff_closed|expired
             $table->string('ip_address', 45)->nullable();
+
+            /*
+            | การกดส่งครัวจากตะกร้าร่วม — นับถอยหลังก่อนส่งจริง
+            |
+            | เก็บไว้ที่นี่ ไม่ใช่ในเบราว์เซอร์ของคนที่กด เพราะทั้งโต๊ะต้องเห็นนาฬิกาเดียวกัน
+            | คนอื่นจึงกดยกเลิกทัน ถ้าเก็บฝั่ง client คนอื่นจะไม่มีทางรู้ว่ากำลังจะส่งแล้ว
+            |
+            | cart_submit_at เป็นทั้งนาฬิกาและธง: มีค่า = กำลังนับถอยหลัง · null = ไม่มีอะไรค้าง
+            | การยกเลิกคือการล้างค่านี้ทิ้ง ตอนส่งจริงจึงต้องเช็คซ้ำว่ายังไม่ถูกล้าง
+            */
+            $table->timestamp('cart_submit_at')->nullable();
+            $table->string('cart_submit_by', 40)->nullable();    // guest_key ของคนกด
+            $table->string('cart_submit_name', 30)->nullable();  // ชื่อเล่นไว้บอกว่าใครกด
+
             $table->timestamps();
 
             $table->index(['branch_id', 'status']);

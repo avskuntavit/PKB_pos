@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\BackOffice;
 
 use App\Http\Controllers\Controller;
+use App\Support\CurrentBranch;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -65,11 +66,21 @@ class StaffBenefitReportController extends Controller
 
     /* ---------- ภายใน ---------- */
 
+    /**
+     * งวดที่รายงานนี้แสดง — ค่าเริ่มต้นคืองวดของ "วันขาย" ไม่ใช่เดือนตามนาฬิกา
+     *
+     * ร้านที่ตัดรอบ 05:00 ตอนตีสองของวันที่ 1 ยังขายอยู่ในงวดเดือนก่อน
+     * ถ้าตั้งต้นด้วย now() หน้ารายงานจะเปิดมาเป็นเดือนใหม่ที่ยังว่างเปล่า
+     * ทั้งที่ยอดของเมื่อคืนยังไม่ถูกปิดงวด — คนดูจะคิดว่าข้อมูลหาย
+     *
+     * (ยังเลือกเดือนอื่นจากดรอปดาวน์ได้ตามเดิม ตรงนี้แก้แค่ค่าเริ่มต้น)
+     */
     protected function period(Request $request): string
     {
-        $period = (string) $request->input('period', now()->format('Y-m'));
+        $fallback = CurrentBranch::get()?->currentPeriod() ?? now()->format('Y-m');
+        $period = (string) $request->input('period', $fallback);
 
-        return preg_match('/^\d{4}-\d{2}$/', $period) ? $period : now()->format('Y-m');
+        return preg_match('/^\d{4}-\d{2}$/', $period) ? $period : $fallback;
     }
 
     protected function rows(array $branchIds, string $period): array

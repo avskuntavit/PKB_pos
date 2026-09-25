@@ -13,6 +13,14 @@ const props = defineProps<{
     payload: string
     amount: number
     merchantName: string
+    /**
+     * ยอดถูกฝังอยู่ใน QR แล้วหรือยัง
+     *
+     * บิลยอดน้อยจะได้ QR แบบไม่ระบุยอด เพราะผู้ให้บริการบางเจ้าไม่ออก QR
+     * ที่ระบุยอดต่ำ ๆ ให้ ตอนนั้นลูกค้าต้องพิมพ์ยอดเองในแอปธนาคาร
+     * ถ้าไม่บอก ลูกค้าจะเจอช่องยอดว่างแล้วพิมพ์มั่ว ร้านได้เงินไม่ครบ
+     */
+    amountInQr?: boolean
 }>()
 
 const dataUrl = ref('')
@@ -51,6 +59,14 @@ watch(() => props.payload, render)
         <div v-else class="my-1 size-52 animate-pulse bg-neutral-100" />
 
         <p class="tabular text-2xl font-bold">{{ money(amount) }} ฿</p>
+
+        <p
+            v-if="amountInQr === false"
+            class="rounded-md bg-amber-100 px-3 py-1.5 text-xs font-semibold text-amber-900"
+        >
+            QR นี้ไม่ได้ระบุยอด — กรุณา<u>พิมพ์ยอด {{ money(amount) }} บาทเอง</u>ในแอปธนาคาร
+        </p>
+
         <p class="text-xs font-medium text-neutral-700">
             โอนแล้วเก็บสลิปไว้ด้วยนะครับ
         </p>

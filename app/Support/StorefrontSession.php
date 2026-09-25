@@ -32,6 +32,9 @@ class StorefrontSession
     /** ชื่อเล่นที่ลูกค้าพิมพ์ไว้ ใช้บอกว่าจานไหนใครสั่ง */
     protected const GUEST_NAME_KEY = 'storefront.guest_name';
 
+    /** กุญแจประจำเครื่อง ใช้แยกว่าใครใส่อะไรลงตะกร้าร่วม */
+    protected const GUEST_KEY = 'storefront.guest_key';
+
     protected const COOKIE_DAYS = 90;
 
     public function __construct(protected TableSessionService $sessions) {}
@@ -213,6 +216,29 @@ class StorefrontSession
         $name = $request->session()->get(self::GUEST_NAME_KEY);
 
         return is_string($name) && $name !== '' ? $name : null;
+    }
+
+    /**
+     * กุญแจประจำเครื่องนี้ในรอบนี้
+     *
+     * ── ทำไมไม่ใช้ session id ตรง ๆ ────────────────────────────────────
+     * Laravel หมุน session id ใหม่ทุกครั้งที่มีการ regenerate (เช่นตอนล็อกอิน)
+     * ของในตะกร้าที่ผูกไว้กับ id เก่าจะกลายเป็น "ของคนอื่น" ทันทีโดยไม่มีสาเหตุ
+     *
+     * ── ทำไมไม่ให้ client ส่งมา ─────────────────────────────────────────
+     * ด้วยเหตุผลเดียวกับชื่อเล่น — ถ้าเชื่อค่าที่ส่งมา ใครก็อ้างเป็นคนอื่นได้
+     * ตัวนี้ไม่ใช่การยืนยันตัวตน เป็นแค่ป้ายว่า "เครื่องนี้" เพื่อทำตัวหนาให้ของตัวเอง
+     */
+    public function guestKey(Request $request): string
+    {
+        $key = $request->session()->get(self::GUEST_KEY);
+
+        if (! is_string($key) || $key === '') {
+            $key = bin2hex(random_bytes(16));
+            $request->session()->put(self::GUEST_KEY, $key);
+        }
+
+        return $key;
     }
 
     public function rememberGuestName(Request $request, ?string $name): void

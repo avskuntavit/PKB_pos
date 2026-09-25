@@ -40,7 +40,7 @@ class SelfOrderService
     /**
      * ลูกค้ากดยืนยันตะกร้า
      *
-     * @param  array<int, array{product_id: int, qty: float, modifier_ids?: array<int>, note?: string|null}>  $lines
+     * @param  array<int, array{product_id: int, qty: float, modifier_ids?: array<int>, note?: string|null, guest_name?: string|null}>  $lines
      */
     public function submit(TableSession $session, array $lines): Order
     {
@@ -61,9 +61,22 @@ class SelfOrderService
 
             $productIds = array_column($lines, 'product_id');
 
+            /*
+            | ต้องเป็น sellableAt() ไม่ใช่ where('branch_id', ...)
+            |
+            | ── บั๊กที่เคยอยู่ตรงนี้ ───────────────────────────────────────
+            | หน้าเมนูของลูกค้าแสดงเมนูจาก sellableAt() ซึ่งรวม **เมนูกลาง**
+            | (branch_id = NULL) ด้วย แต่ตรงนี้กรองด้วย branch_id ของสาขาตรง ๆ
+            | เมนูกลางทุกจานจึงหลุดออกจากลูปด้านล่างแบบเงียบ ๆ
+            |
+            | ลูกค้ากดสั่ง ระบบตอบว่า "ส่งรายการให้พนักงานแล้ว" แต่ไม่มีอะไรไปถึงครัว
+            | และไม่มี error ให้ใครเห็นเลยสักที่
+            |
+            | sellableAt() ยังกันข้ามสาขาให้เหมือนเดิม (forCatalog = ของกลาง + ของสาขานี้)
+            | แถมกรองของที่ปิดขายหรือของหมดออกให้ด้วย ซึ่งเข้มกว่าเดิม
+            */
             $products = Product::with('category')
-                ->where('branch_id', $session->branch_id)
-                ->where('is_active', true)
+                ->sellableAt($session->branch_id)
                 ->whereIn('id', $productIds)
                 ->get()
                 ->keyBy('id');
@@ -83,6 +96,7 @@ class SelfOrderService
                     (float) $line['qty'],
                     $line['modifier_ids'] ?? [],
                     $line['note'] ?? null,
+                    $line['guest_name'] ?? null,
                 );
             }
 
@@ -232,7 +246,12 @@ class SelfOrderService
             'items' => $items,
             'totals' => [
                 'subtotal' => (float) $order->subtotal,
-                'discount' => (float) $order->bill_discount + (float) $order->item_discount,
+                // ส่วนลดทุกชนิดที่ recalculate() หักออก — ขาดตัวไหนบรรทัดบนจอลูกค้าจะบวกไม่ได้ยอดสุทธิ
+                'discount' => (float) $order->item_discount
+                    + (float) $order->bill_discount
+                    + (float) $order->promotion_discount
+                    + (float) $order->voucher_discount
+                    + (float) $order->staff_discount,
                 'service_charge' => (float) $order->service_charge,
                 'tax_amount' => (float) $order->tax_amount,
                 'grand_total' => (float) $order->grand_total,
@@ -302,12 +321,19 @@ class SelfOrderService
         float $qty,
         array $modifierIds,
         ?string $note,
+        ?string $guestName = null,
     ): OrderItem {
         $item = $order->items()->create([
             'product_id' => $product->id,
             'product_name' => $product->name,
             'category_name' => $product->category?->name,
-            'unit_price' => (float) $product->price,
+            /*
+            | ── บั๊กที่เคยอยู่ตรงนี้ ───────────────────────────────────────
+            | เดิมใช้ $product->price ซึ่งเป็น "ราคากลาง" ส่วนหน้าเมนูของลูกค้า
+            | แสดง priceAt($branch) ซึ่งเป็นราคาของสาขา
+            | สาขาไหนตั้งราคาทับไว้ ลูกค้าจะเห็นราคาหนึ่งแล้วโดนคิดอีกราคาหนึ่ง
+            */
+            'unit_price' => $product->priceAt($session->branch_id),
             'unit_cost' => (float) $product->cost,
             'qty' => $qty,
             'note' => $note,
@@ -315,6 +341,8 @@ class SelfOrderService
             'source' => OrderSource::SelfOrder,
             'approval_status' => 'pending',
             'table_session_id' => $session->id,
+            // ชื่อเล่นของคนที่ใส่จานนี้ลงตะกร้าร่วม — บิลโต๊ะเอาไปแยกว่าใครสั่งอะไร
+            'guest_name' => $guestName,
         ]);
 
         $modifierTotal = 0.0;

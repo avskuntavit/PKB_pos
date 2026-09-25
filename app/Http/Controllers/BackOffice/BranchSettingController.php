@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Services\BranchSettingService;
 use App\Services\ImageService;
+use App\Services\PromptPayService;
 use App\Support\CurrentBranch;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -69,7 +70,22 @@ class BranchSettingController extends Controller
             'remove_logo' => ['boolean'],
             'theme_color' => ['nullable', 'string', 'max:30'],
 
-            'promptpay_id' => ['nullable', 'string', 'max:20'],
+            /*
+            | ตรวจรูปแบบตั้งแต่ตอนกรอก ไม่ใช่ปล่อยไปแตกที่หน้าลูกค้า
+            |
+            | ของเดิมรับอะไรก็ได้ยาวไม่เกิน 20 ตัว เจ้าของร้านพิมพ์ "+66 81-234-5678"
+            | (เหลือ 11 หลัก) แล้วบันทึกผ่าน พอลูกค้าเปิดหน้าติดตามออเดอร์เพื่อจ่ายเงิน
+            | PromptPayService จะโยน exception ทั้งหน้าพัง และไม่มีใครรู้ว่าเพราะอะไร
+            */
+            'promptpay_id' => [
+                'nullable',
+                'string',
+                'max:20',
+                // ว่าง = ร้านไม่ได้เปิดรับพร้อมเพย์ ต้องผ่านได้ ไม่งั้นลบค่าทิ้งไม่ได้เลย
+                fn ($attribute, $value, $fail) => blank($value)
+                    || PromptPayService::isValidId($value)
+                    || $fail('พร้อมเพย์ต้องเป็นเบอร์มือถือ 10 หลัก เลขประจำตัว 13 หลัก หรือเลข e-Wallet 15 หลัก'),
+            ],
             'promptpay_name' => ['nullable', 'string', 'max:60'],
 
             'staff_benefit_enabled' => ['boolean'],

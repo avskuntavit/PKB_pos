@@ -33,7 +33,23 @@ return new class extends Migration
             $table->decimal('expected_amount', 14, 2)->default(0);
             $table->decimal('counted_amount', 14, 2)->default(0);
             $table->decimal('transferred_amount', 14, 2)->default(0);
-            $table->decimal('diff_amount', 14, 2)->default(0);   // transferred - expected
+
+            /*
+            | เงินสดที่พนักงานรับมาจริงตอนเน็ตหลุด แต่ลงบิลไม่ได้ (offline_sync_entries.held)
+            |
+            | ── ทำไมต้องแยกคอลัมน์ ไม่บวกรวมใน expected_amount ────────────────
+            | expected_amount มีสัญญาข้อเดียวคือ "คำนวณจากบิล" ซึ่งเป็นตัวเลขที่ตรวจย้อนหลังได้
+            | ถ้าเอาเงินที่ไม่มีบิลรองรับไปบวกทับ ตัวเลขนั้นจะเลิกตรวจได้ทันที
+            |
+            | ── ทำไมต้องนับรวมในยอดที่นำส่ง ───────────────────────────────
+            | เงินก้อนนี้อยู่ในลิ้นชักจริง พนักงานต้องส่งมอบจริง
+            | ถ้าไม่นับรวม ปลายวันระบบจะขึ้นว่า "เงินเกิน" แล้วคนที่ทำถูกจะกลายเป็นคนที่ต้องอธิบาย
+            |
+            | ยอดที่ต้องนำส่ง = expected_amount + held_cash_amount (ดู CashSettlement::due())
+            */
+            $table->decimal('held_cash_amount', 14, 2)->default(0);
+
+            $table->decimal('diff_amount', 14, 2)->default(0);   // transferred - (expected + held_cash)
 
             $table->string('status', 20)->default('pending');    // pending|submitted|verified|disputed
 

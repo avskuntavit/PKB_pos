@@ -38,13 +38,69 @@ class PromptPayService
     /** QR ที่ไม่ระบุยอด ลูกค้ากรอกเอง */
     private const POI_STATIC = '11';
 
+    /**
+     * ยอดต่ำสุดที่ใส่ลงใน QR ได้
+     *
+     * ผู้ให้บริการบางเจ้าไม่ยอมออก QR ที่ระบุยอดต่ำกว่านี้ ลูกค้าจะสแกนแล้วขึ้น error
+     * บิลที่ต่ำกว่านี้จึงได้ QR แบบให้กรอกยอดเองแทน — สแกนได้ โอนได้ แค่พิมพ์เลขเอง
+     * ดีกว่า QR ที่สวยแต่ใช้ไม่ได้
+     *
+     * public เพราะหน้าจอต้องรู้ด้วยว่ารอบนี้ยอดอยู่ใน QR หรือเปล่า จะได้บอกลูกค้าถูก
+     */
+    public const MIN_AMOUNT = 10.0;
+
+    /**
+     * QR ของสาขา — ตัวที่ลูกค้าเห็นบนหน้าติดตามออเดอร์
+     *
+     * ── ทำไมตัวนี้ไม่โยน exception แต่ build() โยน ─────────────────────────
+     * ปลายทางของเมธอดนี้คือหน้าจอของลูกค้าที่กำลังจะจ่ายเงิน ถ้าร้านตั้งเลขพร้อมเพย์
+     * ไว้ผิดรูปแบบ สิ่งที่ต้องเกิดคือ "ไม่มี QR ให้สแกน" (หน้าจอซ่อนกล่อง QR ไปเอง)
+     * ไม่ใช่หน้า error 500 ที่ทำให้ลูกค้าติดตามออเดอร์ตัวเองไม่ได้เลยทั้งหน้า
+     *
+     * ส่วน build() ยังโยนเหมือนเดิม เพราะผู้เรียกที่ระบุเลขมาเองต้องรู้ทันทีว่าให้ค่าผิด
+     *
+     * ── ทำไมยอดน้อย ๆ กลายเป็น QR แบบไม่ระบุยอด ───────────────────────────
+     * ผู้ให้บริการบางเจ้าไม่ออก QR ที่ระบุยอดต่ำกว่า MIN_AMOUNT และยอด 0.00
+     * (คูปองกินหมดทั้งบิล) ก็ถูกปฏิเสธเหมือนกัน ลูกค้าจะสแกนแล้วขึ้น error เฉย ๆ
+     * คืน QR แบบให้กรอกยอดเองดีกว่า อย่างน้อยลูกค้ายังโอนได้
+     */
     public function forBranch(Branch $branch, ?float $amount = null): ?string
     {
         if (blank($branch->promptpay_id)) {
             return null;
         }
 
-        return $this->build($branch->promptpay_id, $amount, $branch->promptpay_name);
+        if (! self::carriesAmount($amount)) {
+            $amount = null;
+        }
+
+        try {
+            return $this->build($branch->promptpay_id, $amount, $branch->promptpay_name);
+        } catch (\InvalidArgumentException) {
+            return null;
+        }
+    }
+
+    /**
+     * ยอดนี้ใส่ลงใน QR ได้ไหม
+     *
+     * มีที่เดียวที่ตัดสินเรื่องนี้ แล้วทั้งฝั่งเซิร์ฟเวอร์และหน้าจอเรียกตัวเดียวกัน
+     * ถ้าต่างคนต่างเขียนเงื่อนไข "ต่ำกว่า 10" วันหนึ่งสองที่จะไม่ตรงกัน
+     * แล้วหน้าจอจะบอกลูกค้าว่ายอดอยู่ใน QR ทั้งที่ไม่ได้อยู่
+     */
+    public static function carriesAmount(?float $amount): bool
+    {
+        return $amount !== null && $amount >= self::MIN_AMOUNT;
+    }
+
+    /** เลขนี้ใช้ทำ QR ได้ไหม — หน้าตั้งค่าใช้ตรวจตั้งแต่ตอนกรอก */
+    public static function isValidId(?string $id): bool
+    {
+        if ($id === null || trim($id) === '') {
+            return false;
+        }
+
+        return in_array(strlen(preg_replace('/\D/', '', $id) ?? ''), [10, 13, 15], true);
     }
 
     public function build(string $promptPayId, ?float $amount = null, ?string $merchantName = null): string

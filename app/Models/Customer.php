@@ -69,11 +69,22 @@ class Customer extends Authenticatable
         return $this->employee_status === EmployeeStatus::Approved;
     }
 
-    /** ยอดส่วนลดที่ใช้ไปแล้วในรอบเดือนที่ระบุ (ค่าเริ่มต้น = เดือนนี้) */
-    public function benefitUsedIn(?string $period = null): float
+    /**
+     * ยอดส่วนลดที่ใช้ไปแล้วในงวดเดือนที่ระบุ (รูปแบบ Y-m)
+     *
+     * ── ทำไม $period ไม่มีค่าเริ่มต้น ─────────────────────────────
+     * เดิมมีค่าเริ่มต้นเป็น now()->format('Y-m') ซึ่งผิดสำหรับร้านที่ตัดรอบ 05:00
+     * ตอนตีสองของวันที่ 1 ร้านยังขายอยู่ในวันขายของเดือนก่อน แต่ now() บอกเดือนใหม่
+     * ตัวบันทึก (StaffBenefitService::record) ใช้ business_date เป็นงวดอยู่แล้ว
+     * ยอดสะสมจึงถูกมองข้าม = เพดานวงเงินรีเซ็ตเร็วไปไม่กี่ชั่วโมง ใช้เกินเพดานได้
+     *
+     * ค่าเริ่มต้นที่ถูกเกือบตลอดแต่ผิดในช่วงที่ไม่มีใครเฝ้า เป็นค่าเริ่มต้นที่ไม่ควรมี
+     * บังคับให้ระบุจึงดีกว่า — ใช้ Branch::currentPeriod() หรือเดือนของ business_date ของบิล
+     */
+    public function benefitUsedIn(string $period): float
     {
         return (float) $this->benefitUsages()
-            ->where('period', $period ?? now()->format('Y-m'))
+            ->where('period', $period)
             ->sum('discount_amount');
     }
 

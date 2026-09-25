@@ -78,6 +78,20 @@ return new class extends Migration
             $table->decimal('value', 12, 2)->default(0);
             $table->decimal('min_spend', 12, 2)->default(0);
             $table->decimal('max_discount', 12, 2)->nullable();
+
+            /*
+            | ฐานที่คูปองใบนี้ใช้คิด — ทั้งขั้นต่ำและมูลค่าที่ลดได้
+            |
+            |   menu_total  ยอดค่าอาหารที่สั่ง ก่อนหักโปรโมชั่น (ค่าเริ่มต้น = พฤติกรรมเดิม)
+            |   amount_due  ยอดที่ต้องจ่ายจริง หลังหักโปรโมชั่นและสิทธิ์พนักงานแล้ว
+            |
+            | เก็บที่ตัวคูปอง ไม่ใช่ที่ตั้งค่าสาขา เพราะกติกานี้เป็นของแคมเปญ —
+            | คูปองการตลาด "ซื้อครบ 400 ลด 10%" กับคูปองชดเชย "ขอโทษที่ช้า ลด 100"
+            | อยู่ในร้านเดียวกันได้ และต้องคิดคนละฐาน
+            |
+            | ดู App\Enums\VoucherBase
+            */
+            $table->string('base_mode', 20)->default('menu_total');
             $table->unsignedInteger('usage_limit')->default(1);
             $table->unsignedInteger('used_count')->default(0);
             $table->dateTime('starts_at')->nullable();

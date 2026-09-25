@@ -33,6 +33,7 @@ class StaffBenefitService
      *     cap: float,
      *     used_this_month: float,
      *     remaining: float,
+     *     period: string,
      *     lines: array<int, array{name: string, qty: float, normal: float, staff: float, saved: float}>,
      *     excluded: array<int, string>,
      *     reason: string|null
@@ -50,6 +51,7 @@ class StaffBenefitService
             'cap' => 0.0,
             'used_this_month' => 0.0,
             'remaining' => 0.0,
+            'period' => $branch->currentPeriod(),
             'lines' => [],
             'excluded' => [],
             'reason' => null,
@@ -125,7 +127,19 @@ class StaffBenefitService
 
         $raw = Money::round($raw);
         $cap = (float) $branch->staff_benefit_monthly_cap;
-        $used = $customer->benefitUsedIn();
+
+        /*
+        | งวดของ "บิลใบนี้" ไม่ใช่เดือนตามนาฬิกา
+        |
+        | record() บันทึกด้วย $order->business_date->format('Y-m')
+        | ถ้าตรงนี้อ่านด้วย now() ทั้งสองจะไม่ตรงกันในช่วงหลังเที่ยงคืนถึงเวลาตัดรอบ
+        | ของวันที่ 1 — ยอดที่ใช้ไปแล้วจะถูกมองข้าม แล้วเพดานเปิดให้ใช้ใหม่ทั้งก้อน
+        |
+        | ต้องเป็นงวดของบิล ไม่ใช่งวดของสาขาตอนนี้ เพราะบิลที่เปิดค้างข้ามคืน
+        | หรือบิลย้อนหลังต้องถูกคิดในงวดที่มันเกิด
+        */
+        $period = $order->business_date?->format('Y-m') ?? $branch->currentPeriod();
+        $used = $customer->benefitUsedIn($period);
 
         // เพดาน 0 = ไม่จำกัด
         $remaining = $cap > 0 ? max(0, Money::round($cap - $used)) : $raw;
@@ -138,6 +152,7 @@ class StaffBenefitService
             'cap' => $cap,
             'used_this_month' => $used,
             'remaining' => $cap > 0 ? Money::round($remaining - $discount) : 0.0,
+            'period' => $period,
             'lines' => $lines,
             'excluded' => $excluded,
             'reason' => $raw > 0 && $discount <= 0 ? 'ใช้วงเงินสวัสดิการของเดือนนี้ครบแล้ว' : null,
@@ -194,7 +209,10 @@ class StaffBenefitService
     public function balanceFor(Customer $customer, Branch $branch): array
     {
         $cap = (float) $branch->staff_benefit_monthly_cap;
-        $used = $customer->benefitUsedIn();
+
+        // งวดของวันขายปัจจุบัน — ตัวเลขบนหน้าบัญชีลูกค้าต้องตรงกับที่แคชเชียร์เห็น
+        $period = $branch->currentPeriod();
+        $used = $customer->benefitUsedIn($period);
 
         return [
             'enabled' => (bool) $branch->staff_benefit_enabled,
@@ -202,7 +220,7 @@ class StaffBenefitService
             'used' => $used,
             'remaining' => $cap > 0 ? max(0, Money::round($cap - $used)) : null,
             'unlimited' => $cap <= 0,
-            'period' => now()->format('Y-m'),
+            'period' => $period,
             'excludes_alcohol' => (bool) $branch->staff_benefit_exclude_alcohol,
         ];
     }

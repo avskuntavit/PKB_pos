@@ -6,6 +6,7 @@ import {
     ArrowLeftRight,
     BadgeCheck,
     Banknote,
+    Wallet,
     Boxes,
     Building2,
     CalendarCheck,
@@ -128,6 +129,9 @@ const navSections: NavSection[] = [
             { name: 'ผังโต๊ะและ QR สั่งอาหาร', icon: LayoutGrid, href: '/backoffice/tables' },
             { name: 'รอบการขายและเปิดกะ', icon: Clock, href: '/backoffice/shifts' },
             { name: 'นำส่งเงินสดประจำวัน', icon: Banknote, href: '/backoffice/cash-settlements' },
+            // อยู่ต่อจากนำส่งเงินสดโดยตั้งใจ — เป็นเงินในลิ้นชักเหมือนกัน
+            // คนที่มานับเงินปลายวันคือคนเดียวกับที่ต้องเห็นว่ามีเงินค้างอยู่กี่ก้อน
+            { name: 'เงินค้างจากตอนระบบล่ม', icon: Wallet, href: '/backoffice/offline-holds' },
             { name: 'รีวิวและความพึงพอใจ', icon: Star, href: '/backoffice/reviews' },
             { name: 'เครื่องพิมพ์และคิวงานพิมพ์', icon: Printer, href: '/backoffice/printers' },
         ],

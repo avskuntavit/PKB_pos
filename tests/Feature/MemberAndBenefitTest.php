@@ -21,6 +21,7 @@ use App\Services\OtpService;
 use App\Services\PaymentService;
 use App\Services\StaffBenefitService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
@@ -227,23 +228,13 @@ class MemberAndBenefitTest extends TestCase
     {
         $customer = $this->employee();
 
-        StaffBenefitUsage::create([
-            'branch_id' => $this->branch->id,
-            'customer_id' => $customer->id,
-            'order_id' => Order::create([
-                'uuid' => (string) \Illuminate\Support\Str::uuid(),
-                'branch_id' => $this->branch->id,
-                'order_no' => 'SEED001',
-                'business_date' => now()->toDateString(),
-                'type' => OrderType::Takeaway,
-                'status' => 'paid',
-            ])->id,
-            'employee_code' => 'EMP001',
-            'period' => now()->format('Y-m'),
-            'discount_amount' => 80,
-            'order_total' => 200,
-            'business_date' => now()->toDateString(),
-        ]);
+        // งวดของ "วันขาย" ไม่ใช่เดือนตามนาฬิกา — ดูเหตุผลที่หมวดงวดเดือนด้านล่าง
+        $this->seedUsage(
+            $customer,
+            80,
+            $this->branch->currentPeriod(),
+            $this->branch->businessDateFor()->toDateString(),
+        );
 
         // ใช้ไปแล้ว 80 จากเพดาน 100 -> รอบนี้ลดได้อีกแค่ 20
         $order = $this->placeOrder([['product_id' => $this->noodle->id, 'qty' => 5]], $customer->fresh());
@@ -269,7 +260,7 @@ class MemberAndBenefitTest extends TestCase
         $this->assertNotNull($usage);
         $this->assertSame('40.00', $usage->discount_amount);
         $this->assertSame('EMP001', $usage->employee_code);
-        $this->assertSame(now()->format('Y-m'), $usage->period);
+        $this->assertSame($this->branch->currentPeriod(), $usage->period);
     }
 
     /* ---------- ช่องทางชำระเงินต่อสาขา ---------- */
@@ -348,5 +339,131 @@ class MemberAndBenefitTest extends TestCase
 
         $this->assertFalse($this->staff->fresh()->can(Permission::PaymentTake));
         $this->assertFalse($this->staff->fresh()->can(Permission::BackOfficeAccess));
+    }
+
+    /* ---------- งวดเดือนของวงเงินสวัสดิการ ---------- */
+
+    /*
+    | ร้านตัดรอบวันขาย 05:00 — ตีสองของวันที่ 1 ยังเป็น "เมื่อคืน" ในทางบัญชี
+    |
+    | ตัวบันทึก (record) ใช้ $order->business_date เป็นงวดมาตลอด
+    | แต่ตัวหายอดสะสมเคยใช้ now() ทั้งสองจึงชี้ไปคนละเดือนในช่วงเวลานี้
+    | ผลคือเพดานวงเงินเปิดให้ใช้ใหม่ทั้งก้อนตอนเที่ยงคืน เร็วไปห้าชั่วโมง
+    |
+    | ห้าชั่วโมงต่อเดือน x 12 = 60 ชั่วโมงต่อปีที่พนักงานใช้เกินเพดานได้
+    | และเป็นช่วงที่ไม่มีใครเฝ้าดู
+    */
+
+    public function test_the_cap_still_counts_last_nights_usage_after_midnight_on_the_first(): void
+    {
+        // ตีสองของวันที่ 1 ตุลาคม — วันขายยังเป็น 30 กันยายน
+        $this->travelTo(Carbon::parse('2026-10-01 02:00:00', $this->branch->timezone));
+
+        $customer = $this->employee();
+
+        // ใช้ไปแล้ว 80 จากบิลเมื่อหัวค่ำ ซึ่งถูกบันทึกในงวด 2026-09
+        $this->seedUsage($customer, 80, '2026-09', '2026-09-30');
+
+        // เพดาน 100 เหลือ 20 — สั่ง 5 จานประหยัดได้ 100 แต่ต้องได้แค่ 20
+        $order = $this->placeOrder([['product_id' => $this->noodle->id, 'qty' => 5]], $customer->fresh());
+
+        $this->assertSame('20.00', $order->fresh()->staff_discount, 'ยอดเมื่อคืนต้องยังนับอยู่');
+    }
+
+    public function test_a_bill_after_midnight_is_recorded_in_the_business_month_not_the_clock_month(): void
+    {
+        $this->travelTo(Carbon::parse('2026-10-01 02:00:00', $this->branch->timezone));
+
+        $customer = $this->employee();
+        $order = $this->placeOrder([['product_id' => $this->noodle->id, 'qty' => 1]], $customer);
+
+        $this->assertSame('2026-09-30', $order->business_date->toDateString(), 'ฟิกซ์เจอร์: วันขายต้องเป็นเมื่อวาน');
+
+        $preview = app(StaffBenefitService::class)->preview($order->fresh(), $customer->fresh());
+
+        $this->assertSame('2026-09', $preview['period'], 'งวดของบิลต้องเป็นเดือนของวันขาย');
+    }
+
+    public function test_the_cap_resets_once_the_business_month_really_turns_over(): void
+    {
+        // สิบโมงเช้าของวันที่ 1 — พ้นเวลาตัดรอบแล้ว วันขายเป็นเดือนใหม่จริง
+        $this->travelTo(Carbon::parse('2026-10-01 10:00:00', $this->branch->timezone));
+
+        $customer = $this->employee();
+        $this->seedUsage($customer, 80, '2026-09', '2026-09-30');
+
+        $order = $this->placeOrder([['product_id' => $this->noodle->id, 'qty' => 5]], $customer->fresh());
+
+        $this->assertSame('100.00', $order->fresh()->staff_discount, 'ยอดของเดือนก่อนต้องไม่ตามมากินวงเงินเดือนใหม่');
+    }
+
+    public function test_the_usage_recorded_at_closing_lands_in_the_same_month_the_cap_was_checked_against(): void
+    {
+        /*
+        | ด่านสำคัญที่สุดของชุดนี้ — ตัวเช็คเพดานกับตัวบันทึกต้องพูดถึงเดือนเดียวกัน
+        | ถ้าสองตัวนี้หลุดจากกันอีก เพดานจะรั่วแบบเดิมโดยไม่มีเทสต์ไหนร้อง
+        */
+        $this->travelTo(Carbon::parse('2026-10-01 02:00:00', $this->branch->timezone));
+        $this->actingAs($this->staff);
+
+        $customer = $this->employee();
+        $order = $this->placeOrder([['product_id' => $this->noodle->id, 'qty' => 2]], $customer);
+
+        $preview = app(StaffBenefitService::class)->preview($order->fresh(), $customer->fresh());
+
+        app(OnlineOrderService::class)->accept($order->fresh(), $this->staff);
+        app(PaymentService::class)->pay($order->fresh(), [
+            ['method' => 'promptpay', 'amount' => 60],
+        ]);
+
+        $usage = StaffBenefitUsage::where('order_id', $order->id)->firstOrFail();
+
+        $this->assertSame($preview['period'], $usage->period);
+        $this->assertSame('2026-09', $usage->period);
+    }
+
+    public function test_the_balance_the_customer_sees_uses_the_business_month(): void
+    {
+        $this->travelTo(Carbon::parse('2026-10-01 02:00:00', $this->branch->timezone));
+
+        $customer = $this->employee();
+        $this->seedUsage($customer, 80, '2026-09', '2026-09-30');
+
+        $balance = app(StaffBenefitService::class)->balanceFor($customer->fresh(), $this->branch);
+
+        $this->assertSame('2026-09', $balance['period'], 'หน้าบัญชีลูกค้าต้องบอกงวดเดียวกับที่แคชเชียร์เห็น');
+        $this->assertSame(80.0, $balance['used']);
+        $this->assertSame(20.0, $balance['remaining']);
+    }
+
+    public function test_a_shop_that_does_not_sell_past_midnight_sees_no_difference(): void
+    {
+        // ตัดรอบเที่ยงคืน = เดือนของวันขายตรงกับเดือนตามนาฬิกาเสมอ
+        $this->branch->update(['business_day_start' => '00:00:00']);
+        $this->travelTo(Carbon::parse('2026-10-01 02:00:00', $this->branch->timezone));
+
+        $this->assertSame('2026-10', $this->branch->fresh()->currentPeriod());
+    }
+
+    /** เงินสวัสดิการที่ถูกใช้ไปแล้วในงวดหนึ่ง — ใส่ตรง ๆ เพราะจำลอง "บิลของเมื่อคืน" */
+    private function seedUsage(Customer $customer, float $amount, string $period, string $businessDate): StaffBenefitUsage
+    {
+        return StaffBenefitUsage::create([
+            'branch_id' => $this->branch->id,
+            'customer_id' => $customer->id,
+            'order_id' => Order::create([
+                'uuid' => (string) \Illuminate\Support\Str::uuid(),
+                'branch_id' => $this->branch->id,
+                'order_no' => 'SEED'.substr(md5($period.$businessDate), 0, 6),
+                'business_date' => $businessDate,
+                'type' => OrderType::Takeaway,
+                'status' => 'paid',
+            ])->id,
+            'employee_code' => $customer->employee_code,
+            'period' => $period,
+            'discount_amount' => $amount,
+            'order_total' => 200,
+            'business_date' => $businessDate,
+        ]);
     }
 }

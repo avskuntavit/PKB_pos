@@ -205,6 +205,20 @@ class Branch extends Model
             : ($time >= $open || $time <= $close);
     }
 
+    /**
+     * งวดเดือนของ "วันขาย" — ไม่ใช่เดือนตามนาฬิกา
+     *
+     * ร้านที่ตัดรอบ 05:00 ตอนตีสองของวันที่ 1 ยังขายอยู่ในวันขายของเดือนก่อน
+     * ยอดสะสมของงวดจึงต้องนับด้วยเดือนนี้ ไม่ใช่เดือนที่นาฬิกาบอก
+     *
+     * รวมไว้ที่เดียวเพราะมีสามที่ที่ต้องตอบคำถามนี้ให้ตรงกัน —
+     * ถ้าปล่อยให้แต่ละที่เขียน now()->format('Y-m') เอง มันจะไม่ตรงกันอีกแน่
+     */
+    public function currentPeriod(?Carbon $at = null): string
+    {
+        return $this->businessDateFor($at)->format('Y-m');
+    }
+
     public function isTakingOnlineOrders(): bool
     {
         return $this->is_active && $this->is_accepting_online_orders && $this->isOpenNow();

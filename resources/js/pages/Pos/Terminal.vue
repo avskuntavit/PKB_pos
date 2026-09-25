@@ -12,6 +12,10 @@ import EmptyState from '@/components/ui/EmptyState.vue'
 import PaymentDialog from '@/components/pos/PaymentDialog.vue'
 import ModifierDialog from '@/components/pos/ModifierDialog.vue'
 import ApprovalPanel from '@/components/pos/ApprovalPanel.vue'
+import OfflineCashDialog from '@/components/pos/OfflineCashDialog.vue'
+import { useConnection } from '@/composables/useConnection'
+import { useOfflineQueue } from '@/composables/useOfflineQueue'
+import type { AddItemPayload } from '@/composables/useOfflineQueue'
 import { money, number } from '@/lib/format'
 import { useIdempotencyKey } from '@/lib/idempotency'
 import type { Category, Option, Order, OrderItem, Product } from '@/types'
@@ -38,6 +42,119 @@ const discountForm = useForm({ amount: 0, percent: null as number | null })
 
 // ส่งครัวซ้ำ = ใบสั่งซ้ำบนโต๊ะครัว ครัวทำสองจาน กันไว้ด้วยคีย์เดียวกับฝั่งชำระเงิน
 const { rotate: rotateSendKey, headers: sendHeaders } = useIdempotencyKey()
+
+/*
+|--------------------------------------------------------------------------
+| ทำงานต่อได้ตอนเน็ตหลุด
+|--------------------------------------------------------------------------
+|
+| ทำได้แค่ "เพิ่มรายการ" กับ "ส่งครัว" ในบิลที่เปิดไว้ก่อนหลุดแล้ว
+| ของที่กดตอนนั้นไปนอนอยู่ในคิวฝั่งเบราว์เซอร์ แล้วขึ้นระบบเองเมื่อกลับมาต่อได้
+|
+| เปิดบิลใหม่ / แก้รายการที่ขึ้นระบบไปแล้ว / รับเงิน ยังทำตอนหลุดไม่ได้
+| — ทั้งสามอย่างต้องรู้สถานะปัจจุบันจากเซิร์ฟเวอร์ก่อนจึงจะตัดสินใจถูก
+*/
+const { isOffline, onReconnect } = useConnection()
+const queue = useOfflineQueue()
+
+/** รายการของบิลใบนี้ที่ยังไม่ขึ้นระบบ */
+const pendingLines = computed(() => (props.order ? queue.addItemsFor(props.order.id) : []))
+const pendingTotal = computed(() => (props.order ? queue.pendingTotalFor(props.order.id) : 0))
+const pendingSend = computed(() => (props.order ? queue.hasPendingSend(props.order.id) : false))
+
+const pendingPayment = computed(() => (props.order ? queue.hasPendingPayment(props.order.id) : false))
+
+/*
+| รับเงินสดตอนหลุดได้เฉพาะบิลที่ "ไม่มีอะไรค้างอยู่ในเครื่องนี้"
+|
+| ถ้ามีรายการที่คีย์ไว้แต่ยังไม่ขึ้นระบบ ยอดสุทธิบนจอยังไม่รวมของพวกนั้น
+| เก็บเงินตามยอดนั้นคือเก็บขาด และแก้ย้อนหลังยากเพราะบิลปิดไปแล้ว
+|
+| ข้อจำกัดนี้ตั้งใจให้แคบ — เคสที่ต้องการจริง ๆ คือลูกค้ากินเสร็จก่อนระบบล่ม
+| แล้วจะขอจ่าย ซึ่งไม่มีอะไรค้างอยู่แล้วโดยธรรมชาติ
+| ส่วนเคส "สั่งและจ่ายระหว่างที่ล่ม" ต้องรอระบบกลับมา ซึ่งปกติไม่กี่วินาที
+*/
+const canPayOffline = computed(
+    () => isOffline.value
+        && props.order !== null
+        && activeItems.value.length > 0
+        && pendingApproval.value.length === 0
+        && pendingLines.value.length === 0
+        && !pendingSend.value
+        && !pendingPayment.value,
+)
+
+const showOfflineCash = ref(false)
+const offlineSlipNo = ref('')
+
+function openOfflineCash() {
+    if (!canPayOffline.value) return
+
+    offlineSlipNo.value = queue.newSlipNo()
+    showOfflineCash.value = true
+}
+
+function confirmOfflineCash(receivedAmount: number, changeAmount: number) {
+    if (!props.order) return
+
+    queue.enqueuePayment(props.order.id, {
+        // ยอดที่เซิร์ฟเวอร์คิดไว้ ส่งไปให้มันเทียบว่าบิลถูกแก้ระหว่างที่เครื่องหลุดหรือเปล่า
+        expected_total: Number(props.order.grand_total),
+        received: receivedAmount,
+        change: changeAmount,
+        slip_no: offlineSlipNo.value,
+        order_no: props.order.order_no,
+    })
+}
+
+/*
+| แก้ของที่ขึ้นระบบไปแล้วตอนหลุดไม่ได้
+|
+| ไม่ใช่เพราะทำไม่ได้ทางเทคนิค แต่เพราะ "ลดจำนวนเป็น 2" ที่เล่นย้อนทีหลัง
+| อาจไปทับสิ่งที่พนักงานอีกเครื่องแก้ไปแล้วระหว่างที่เครื่องนี้มองไม่เห็นอะไรเลย
+| ปิดไว้ตรง ๆ ดีกว่าให้กดได้แล้วมารู้ทีหลังว่าตัวเลขเพี้ยน
+*/
+const canEditSaved = computed(() => !isOffline.value)
+
+/** เน็ตกลับมาแล้ว — ส่งของที่ค้างขึ้นทันที แล้วดึงบิลใหม่ให้ตรงกับของจริง */
+onReconnect(async () => {
+    if (!queue.hasPending.value) return
+
+    await queue.sync()
+    router.reload()
+})
+
+/**
+ * ข้อมูลไว้วาดบนจอระหว่างรอ — ชื่อ ราคา และชื่อตัวเลือก
+ *
+ * ราคาตรงนี้ใช้โชว์อย่างเดียว ตอนขึ้นระบบจริงเซิร์ฟเวอร์คิดราคาใหม่ทั้งหมด
+ * ถ้าร้านขึ้นราคาระหว่างที่เครื่องหลุด บิลต้องได้ราคาปัจจุบัน ไม่ใช่ราคาที่แท็บเล็ตจำไว้
+ */
+function describeItem(
+    product: Product,
+    qty: number,
+    modifierIds: number[],
+    note: string | null,
+    openPrice: number | null,
+): AddItemPayload {
+    const chosen = product.modifier_groups
+        .flatMap((g) => g.modifiers)
+        .filter((m) => modifierIds.includes(m.id))
+
+    const delta = chosen.reduce((sum, m) => sum + Number(m.price_delta ?? 0), 0)
+    const base = product.is_open_price ? Number(openPrice ?? 0) : Number(product.price)
+
+    return {
+        product_id: product.id,
+        qty,
+        modifier_ids: modifierIds,
+        note,
+        open_price: openPrice,
+        name: product.name,
+        unit_price: base + delta,
+        modifier_names: chosen.map((m) => m.name),
+    }
+}
 
 const filtered = computed(() => {
     const term = search.value.trim().toLowerCase()
@@ -116,16 +233,32 @@ function addItem(
 ) {
     if (!props.order) return
 
+    modifierProduct.value = null
+
+    if (isOffline.value) {
+        const product = props.products.find((p) => p.id === productId)
+
+        // ไม่รู้จักเมนูนี้ในหน้าที่โหลดมา = วาดบนจอไม่ได้ และเดาราคาไม่ได้ ไม่รับเข้าคิว
+        if (!product) return
+
+        queue.enqueueAddItem(
+            props.order.id,
+            describeItem(product, qty, modifierIds, note, openPrice),
+        )
+
+        return
+    }
+
     router.post(
         `/pos/orders/${props.order.id}/items`,
         { product_id: productId, qty, modifier_ids: modifierIds, note, open_price: openPrice },
         { preserveScroll: true, preserveState: true },
     )
-
-    modifierProduct.value = null
 }
 
 function changeQty(item: OrderItem, delta: number) {
+    if (!canEditSaved.value) return
+
     const qty = Number(item.qty) + delta
 
     if (qty <= 0) {
@@ -137,12 +270,27 @@ function changeQty(item: OrderItem, delta: number) {
 }
 
 function removeItem(item: OrderItem) {
+    if (!canEditSaved.value) return
+
     router.delete(`/pos/items/${item.id}`, { preserveScroll: true, preserveState: true })
 }
 
 /** ไม่ส่ง itemIds = ส่งทุกอย่างที่ค้าง, ส่งมา = ส่งเฉพาะกองนั้น */
 function sendToKitchen(itemIds?: number[]) {
     if (!props.order) return
+
+    /*
+    | ตอนหลุดส่งได้แค่ "ทุกอย่างที่ค้าง" เลือกเฉพาะคอร์สไม่ได้
+    |
+    | รายการที่เพิ่งคีย์ไปยังไม่มี id ของเซิร์ฟเวอร์ให้ระบุ ถ้ายอมให้เลือกคอร์ส
+    | ของที่คีย์ตอนหลุดจะหล่นออกจากกองที่ครัวควรได้ โดยไม่มีอะไรบอกพนักงาน
+    | ปุ่มรายคอร์สจึงถูกปิดไว้บนหน้าจอด้วยตอนหลุด
+    */
+    if (isOffline.value) {
+        queue.enqueueSend(props.order.id)
+
+        return
+    }
 
     router.post(
         `/pos/orders/${props.order.id}/send`,
@@ -321,11 +469,23 @@ const categoryColor = (id: number | null) =>
                                 </div>
 
                                 <div class="mt-2 flex items-center gap-1">
-                                    <Button variant="outline" size="icon" class="size-7" @click="changeQty(item, -1)">
+                                    <Button
+                                        variant="outline"
+                                        size="icon"
+                                        class="size-7"
+                                        :disabled="!canEditSaved"
+                                        @click="changeQty(item, -1)"
+                                    >
                                         <Minus />
                                     </Button>
                                     <span class="tabular w-9 text-center text-sm">{{ number(item.qty) }}</span>
-                                    <Button variant="outline" size="icon" class="size-7" @click="changeQty(item, 1)">
+                                    <Button
+                                        variant="outline"
+                                        size="icon"
+                                        class="size-7"
+                                        :disabled="!canEditSaved"
+                                        @click="changeQty(item, 1)"
+                                    >
                                         <Plus />
                                     </Button>
                                     <div class="ml-auto flex items-center gap-1">
@@ -353,6 +513,7 @@ const categoryColor = (id: number | null) =>
                                             size="icon"
                                             class="size-7 text-[var(--status-critical)]"
                                             aria-label="ยกเลิกรายการ"
+                                            :disabled="!canEditSaved"
                                             @click="removeItem(item)"
                                         >
                                             <Trash2 />
@@ -361,7 +522,86 @@ const categoryColor = (id: number | null) =>
                                 </div>
                             </li>
                         </ul>
-                        <EmptyState v-else title="บิลยังว่าง" description="เลือกเมนูจากด้านซ้ายเพื่อเริ่มสั่ง" />
+
+                        <!-- ══ รายการที่ยังไม่ขึ้นระบบ ══ -->
+                        <!--
+                            แยกกองไว้ต่างหากโดยตั้งใจ ไม่ปนกับรายการจริง
+                            พนักงานต้องแยกออกด้วยตาเปล่าว่าอะไรอยู่ในบิลแล้ว อะไรยังอยู่แค่ในเครื่องนี้
+                        -->
+                        <ul v-if="pendingLines.length" class="divide-y border-t border-dashed">
+                            <li
+                                v-for="entry in pendingLines"
+                                :key="entry.uuid"
+                                class="bg-[var(--status-warning)]/5 px-4 py-3"
+                            >
+                                <div class="flex items-start justify-between gap-2">
+                                    <div class="min-w-0">
+                                        <p class="truncate text-sm font-medium">{{ entry.payload?.name }}</p>
+                                        <p
+                                            v-if="entry.payload?.modifier_names.length"
+                                            class="truncate text-xs text-muted-foreground"
+                                        >
+                                            {{ entry.payload.modifier_names.join(', ') }}
+                                        </p>
+                                        <p v-if="entry.payload?.note" class="truncate text-xs text-muted-foreground">
+                                            หมายเหตุ: {{ entry.payload.note }}
+                                        </p>
+
+                                        <Badge v-if="entry.error" variant="danger" class="mt-1">
+                                            ส่งไม่สำเร็จ · ต้องคีย์ใหม่
+                                        </Badge>
+                                        <Badge v-else variant="warning" class="mt-1">
+                                            รอส่งขึ้นระบบ
+                                        </Badge>
+
+                                        <p v-if="entry.error" class="mt-1 text-xs text-[var(--status-critical)]">
+                                            {{ entry.error }}
+                                        </p>
+                                    </div>
+                                    <span class="tabular shrink-0 text-sm font-semibold">
+                                        {{ money((entry.payload?.unit_price ?? 0) * (entry.payload?.qty ?? 0)) }}
+                                    </span>
+                                </div>
+
+                                <!-- แก้ได้อิสระ เพราะของชิ้นนี้ยังไม่เคยไปถึงที่ไหน -->
+                                <div class="mt-2 flex items-center gap-1">
+                                    <Button
+                                        variant="outline"
+                                        size="icon"
+                                        class="size-7"
+                                        @click="queue.setPendingQty(entry.uuid, (entry.payload?.qty ?? 1) - 1)"
+                                    >
+                                        <Minus />
+                                    </Button>
+                                    <span class="tabular w-9 text-center text-sm">
+                                        {{ number(entry.payload?.qty ?? 0) }}
+                                    </span>
+                                    <Button
+                                        variant="outline"
+                                        size="icon"
+                                        class="size-7"
+                                        @click="queue.setPendingQty(entry.uuid, (entry.payload?.qty ?? 0) + 1)"
+                                    >
+                                        <Plus />
+                                    </Button>
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        class="ml-auto size-7 text-[var(--status-critical)]"
+                                        aria-label="เอาออกจากคิว"
+                                        @click="queue.removePending(entry.uuid)"
+                                    >
+                                        <Trash2 />
+                                    </Button>
+                                </div>
+                            </li>
+                        </ul>
+
+                        <EmptyState
+                            v-if="!activeItems.length && !pendingLines.length"
+                            title="บิลยังว่าง"
+                            description="เลือกเมนูจากด้านซ้ายเพื่อเริ่มสั่ง"
+                        />
                     </div>
 
                     <div class="space-y-3 border-t px-4 py-3">
@@ -386,11 +626,28 @@ const categoryColor = (id: number | null) =>
                                 <dt class="font-medium">รวมสุทธิ</dt>
                                 <dd class="tabular text-xl font-semibold">{{ money(order.grand_total) }}</dd>
                             </div>
+
+                            <!--
+                                ของที่ยังไม่ขึ้นระบบแยกบรรทัด ไม่บวกเข้ายอดสุทธิ
+
+                                ยอดสุทธิคือเลขที่เซิร์ฟเวอร์คิดมาแล้วจริง ๆ (รวม VAT ค่าบริการ ส่วนลด)
+                                ถ้าเอาราคาดิบของที่ค้างอยู่ไปบวกทับ จะได้ตัวเลขที่ไม่ตรงกับอะไรเลย
+                                แล้วพนักงานจะเผลอเก็บเงินตามนั้น
+                            -->
+                            <div
+                                v-if="pendingLines.length"
+                                class="flex items-baseline justify-between rounded-md bg-[var(--status-warning)]/10 px-2 py-1.5 text-[var(--status-warning)]"
+                            >
+                                <dt class="text-xs font-medium">
+                                    รอส่งขึ้นระบบ {{ pendingLines.length }} รายการ
+                                </dt>
+                                <dd class="tabular text-sm font-semibold">+{{ money(pendingTotal) }}</dd>
+                            </div>
                         </dl>
 
                         <div class="space-y-2">
                             <!-- ปุ่มรายคอร์ส โผล่เมื่อบิลนี้มีของค้างมากกว่าหนึ่งกองจริง ๆ -->
-                            <div v-if="courseGroups.length > 1" class="grid grid-cols-2 gap-2">
+                            <div v-if="courseGroups.length > 1 && !isOffline" class="grid grid-cols-2 gap-2">
                                 <Button
                                     v-for="g in courseGroups"
                                     :key="g.key"
@@ -410,11 +667,19 @@ const categoryColor = (id: number | null) =>
                             </div>
 
                             <div class="grid grid-cols-2 gap-2">
-                                <Button variant="outline" :disabled="!sendable.length" @click="sendToKitchen()">
+                                <Button
+                                    variant="outline"
+                                    :disabled="isOffline
+                                        ? (pendingSend || (!sendable.length && !pendingLines.length))
+                                        : !sendable.length"
+                                    @click="sendToKitchen()"
+                                >
                                     <ChefHat />
-                                    {{ courseGroups.length > 1 ? 'ส่งทั้งหมด' : 'ส่งครัว' }}
+                                    <template v-if="pendingSend">รอส่งครัวขึ้นระบบ</template>
+                                    <template v-else-if="isOffline">ส่งครัว (เมื่อระบบกลับมา)</template>
+                                    <template v-else>{{ courseGroups.length > 1 ? 'ส่งทั้งหมด' : 'ส่งครัว' }}</template>
                                 </Button>
-                                <Button variant="outline" @click="showDiscount = true">
+                                <Button variant="outline" :disabled="isOffline" @click="showDiscount = true">
                                     <Percent />
                                     ส่วนลด
                                 </Button>
@@ -425,11 +690,58 @@ const categoryColor = (id: number | null) =>
                             ยังมี {{ pendingApproval.length }} รายการที่ลูกค้าสั่งรอยืนยัน — เคลียร์ก่อนจึงจะปิดบิลได้
                         </p>
 
+                        <!-- เงินที่รับตอนหลุดไปแล้ว รอส่งขึ้นระบบ -->
+                        <p
+                            v-else-if="pendingPayment"
+                            class="text-center text-xs text-[var(--status-warning)]"
+                        >
+                            เก็บเงินบิลนี้ไปแล้วตอนระบบล่ม · รอส่งขึ้นระบบเมื่อกลับมาต่อได้
+                        </p>
+
+                        <!--
+                            รับเงินตอนที่ยังมีของค้างอยู่ในเครื่องไม่ได้
+
+                            ยอดสุทธิที่หน้าจอโชว์ยังไม่รวมของพวกนั้น กดเก็บเงินตอนนี้คือเก็บขาด
+                            และแก้ย้อนหลังยากเพราะบิลปิดไปแล้ว
+                        -->
+                        <p
+                            v-else-if="isOffline && (pendingLines.length || pendingSend)"
+                            class="text-center text-xs text-[var(--status-warning)]"
+                        >
+                            ยังมีรายการที่ไม่ได้ขึ้นระบบ — ต้องรอให้ระบบกลับมาและส่งขึ้นให้ครบก่อนจึงจะเก็บเงินได้
+                        </p>
+
+                        <p
+                            v-else-if="pendingLines.length || pendingSend"
+                            class="text-center text-xs text-[var(--status-warning)]"
+                        >
+                            กำลังส่งรายการที่ค้างขึ้นระบบ — รอสักครู่แล้วจึงเก็บเงินได้
+                        </p>
+
+                        <!-- ตอนหลุด: ปุ่มเปลี่ยนความหมายเป็น "รับเงินสด" ซึ่งทำได้จริงเฉพาะเงินสด -->
                         <Button
+                            v-if="isOffline"
                             variant="brand"
                             size="xl"
                             class="w-full"
-                            :disabled="activeItems.length === 0 || pendingApproval.length > 0"
+                            :disabled="!canPayOffline"
+                            @click="openOfflineCash"
+                        >
+                            รับเงินสด {{ money(order.grand_total) }} บาท
+                        </Button>
+
+                        <Button
+                            v-else
+                            variant="brand"
+                            size="xl"
+                            class="w-full"
+                            :disabled="
+                                activeItems.length === 0
+                                    || pendingApproval.length > 0
+                                    || pendingLines.length > 0
+                                    || pendingSend
+                                    || pendingPayment
+                            "
                             @click="showPayment = true"
                         >
                             ชำระเงิน {{ money(order.grand_total) }} บาท
@@ -479,6 +791,16 @@ const categoryColor = (id: number | null) =>
             v-model:open="showPayment"
             :order="order"
             :methods="paymentMethods"
+        />
+
+        <OfflineCashDialog
+            v-if="order && showOfflineCash"
+            :order-no="order.order_no"
+            :table-name="order.dining_table?.name ?? null"
+            :total="Number(order.grand_total)"
+            :slip-no="offlineSlipNo"
+            @close="showOfflineCash = false"
+            @confirm="confirmOfflineCash"
         />
 
         <Modal v-model:open="showDiscount" title="ส่วนลดท้ายบิล">

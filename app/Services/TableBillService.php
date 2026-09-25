@@ -57,10 +57,22 @@ class TableBillService
             ->values()
             ->all();
 
+        /*
+        | ต้องรวมส่วนลด "ทุกชนิด" ที่ recalculate() หักออกจากยอด
+        |
+        | ตัวเลขชุดนี้อยู่บนมือถือลูกค้าและเขาเอาไปบวกลบตามเองได้
+        |   subtotal − discount + service_charge = grand_total (ร้านที่ราคารวม VAT แล้ว)
+        | ขาดตัวไหนไปตัวเดียว บรรทัดที่โชว์จะบวกไม่ได้ยอดสุทธิ
+        | แล้วลูกค้าจะเรียกพนักงานมาถามว่าคิดเงินถูกหรือเปล่า — ซึ่งเป็นสิ่งที่หน้านี้ตั้งใจจะกำจัด
+        |
+        | `staff_discount` เคยหายไปจากรายการนี้ตัวเดียว ทั้งที่ ReceiptDocument
+        | กับ SalesExportService นับมันอยู่แล้ว — ใบเสร็จกับบิลบนมือถือจึงบอกไม่ตรงกัน
+        */
         $discount = (float) $order->item_discount
             + (float) $order->bill_discount
             + (float) $order->promotion_discount
-            + (float) $order->voucher_discount;
+            + (float) $order->voucher_discount
+            + (float) $order->staff_discount;
 
         return [
             'order_id' => $order->id,

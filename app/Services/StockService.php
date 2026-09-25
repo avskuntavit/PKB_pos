@@ -36,7 +36,22 @@ class StockService
      */
     public function deductForOrder(Order $order): void
     {
-        $order->loadMissing([
+        /*
+        | ต้อง load() ไม่ใช่ loadMissing() — บั๊กตัวเดียวกับที่เคยแก้ไปแล้วใน StaffBenefitService
+        |
+        | `PaymentService::pay()` เรียก `OrderService::recalculate()` ก่อนหน้านี้ในทรานแซกชันเดียวกัน
+        | ซึ่งโหลด `activeItems.product:id,category_id` = ดึงมาแค่สองคอลัมน์เพื่อความเร็ว
+        |
+        | loadMissing เห็นว่า relation "โหลดแล้ว" จึงไม่ทำอะไรเลย เราจึงได้ Product
+        | ที่ไม่มีคอลัมน์ track_stock ติดมา แล้ว `usageFor()` อ่านได้ null ซึ่งเป็น false
+        | -> คืนอาร์เรย์ว่าง -> **ไม่ตัดสต๊อกเลยสักบิลตั้งแต่แรก** และเงียบสนิท
+        | เพราะ Eloquent คืน null ให้แอตทริบิวต์ที่ไม่ได้โหลด ไม่ได้โยน error
+        |
+        | ตอนแก้ที่ StaffBenefitService ไม่ได้กวาดทั้งโปรเจกต์ ตัวนี้จึงค้างมาจนถึงวันนี้
+        | เจอตอนเขียนเทสต์ offline เฟส 3 — คุมไว้แล้วที่
+        | OfflineCashTest::test_paying_a_bill_deducts_stock_at_all
+        */
+        $order->load([
             'activeItems.product.recipeItems',
             'activeItems.modifiers.modifier.recipeItems',
         ]);

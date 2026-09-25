@@ -35,6 +35,8 @@ class CashSettlementController extends Controller
                 'id' => $settlement->id,
                 'business_date' => $settlement->business_date->toDateString(),
                 'expected_amount' => (float) $settlement->expected_amount,
+                'held_cash_amount' => (float) $settlement->held_cash_amount,
+                'due_amount' => $settlement->due(),
                 'counted_amount' => (float) $settlement->counted_amount,
                 'transferred_amount' => (float) $settlement->transferred_amount,
                 'diff_amount' => (float) $settlement->diff_amount,
@@ -45,6 +47,18 @@ class CashSettlementController extends Controller
                 'note' => $settlement->note,
             ],
             'hasOpenShift' => $this->settlements->hasOpenShift($branch, $date),
+
+            /*
+            | เงินค้างที่ยังไม่มีใครตัดสิน — เตือน ไม่ใช่บล็อก
+            |
+            | ยอดถูกนับรวมในยอดที่ต้องนำส่งแล้ว เพราะเงินอยู่ในลิ้นชักจริง
+            | แต่ถ้าปล่อยให้กลืนหายไปในตัวเลขเดียว พนักงานจะไม่รู้ว่ามีก้อนที่ยังไม่มีบิลรองรับ
+            | และผู้จัดการจะไม่มีใครมาเตือนให้ไปตัดสิน
+            |
+            | ไม่บล็อกการนำส่งเพราะการตัดสินเป็นงานของผู้จัดการ
+            | ถ้าบล็อก พนักงานที่กำลังจะปิดร้านจะทำอะไรไม่ได้เลยโดยไม่ใช่ความผิดของเขา
+            */
+            'unresolvedHeld' => $this->settlements->unresolvedHeldCashFor($branch, $date),
             'outstanding' => collect($this->settlements->outstanding($branch))
                 ->map(fn (array $row) => [
                     'business_date' => $row['business_date'],

@@ -123,11 +123,15 @@ const totalMissing = computed(() => props.missing.reduce((sum, m) => sum + m.exp
                 </div>
 
                 <div v-if="settlements.length" class="overflow-x-auto">
-                    <table class="w-full min-w-[820px] text-sm">
+                    <table class="w-full min-w-[980px] text-sm">
                         <thead>
                             <tr class="border-b text-left text-xs text-muted-foreground">
                                 <th class="py-2 pe-3 font-medium">วันขาย</th>
-                                <th class="py-2 pe-3 text-right font-medium">ควรได้</th>
+                                <th class="py-2 pe-3 text-right font-medium">จากบิล</th>
+                                <th class="py-2 pe-3 text-right font-medium" title="เงินสดที่รับตอนเน็ตหลุดแต่ยังไม่มีบิลรองรับ">
+                                    เงินค้าง
+                                </th>
+                                <th class="py-2 pe-3 text-right font-medium">ต้องนำส่ง</th>
                                 <th class="py-2 pe-3 text-right font-medium">นับได้</th>
                                 <th class="py-2 pe-3 text-right font-medium">โอนแล้ว</th>
                                 <th class="py-2 pe-3 text-right font-medium">ส่วนต่าง</th>
@@ -148,6 +152,13 @@ const totalMissing = computed(() => props.missing.reduce((sum, m) => sum + m.exp
                                     </span>
                                 </td>
                                 <td class="tabular py-2.5 pe-3 text-right">{{ money(row.expected_amount) }}</td>
+                                <td
+                                    class="tabular py-2.5 pe-3 text-right"
+                                    :class="row.held_cash_amount > 0 && 'font-semibold text-[var(--status-warning)]'"
+                                >
+                                    {{ row.held_cash_amount > 0 ? money(row.held_cash_amount) : '—' }}
+                                </td>
+                                <td class="tabular py-2.5 pe-3 text-right font-medium">{{ money(row.due_amount) }}</td>
                                 <td class="tabular py-2.5 pe-3 text-right">{{ money(row.counted_amount) }}</td>
                                 <td class="tabular py-2.5 pe-3 text-right">{{ money(row.transferred_amount) }}</td>
                                 <td
