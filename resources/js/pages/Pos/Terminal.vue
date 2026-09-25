@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { Head, Link, router, useForm } from '@inertiajs/vue3'
-import { ArrowLeft, ChefHat, Minus, Percent, Plus, Search, Trash2 } from 'lucide-vue-next'
+import { ArrowLeft, BadgeCheck, ChefHat, Minus, Percent, Plus, QrCode, Search, Trash2 } from 'lucide-vue-next'
 import PosLayout from '@/layouts/PosLayout.vue'
 import Button from '@/components/ui/Button.vue'
 import Input from '@/components/ui/Input.vue'
@@ -10,6 +10,7 @@ import Modal from '@/components/ui/Modal.vue'
 import Badge from '@/components/ui/Badge.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import PaymentDialog from '@/components/pos/PaymentDialog.vue'
+import PaymentQrDialog from '@/components/pos/PaymentQrDialog.vue'
 import ModifierDialog from '@/components/pos/ModifierDialog.vue'
 import ApprovalPanel from '@/components/pos/ApprovalPanel.vue'
 import OfflineCashDialog from '@/components/pos/OfflineCashDialog.vue'
@@ -18,7 +19,7 @@ import { useOfflineQueue } from '@/composables/useOfflineQueue'
 import type { AddItemPayload } from '@/composables/useOfflineQueue'
 import { money, number } from '@/lib/format'
 import { useIdempotencyKey } from '@/lib/idempotency'
-import type { Category, Option, Order, OrderItem, Product } from '@/types'
+import type { Category, Option, Order, OrderItem, PaymentCharge, Product } from '@/types'
 
 const props = defineProps<{
     categories: Category[]
@@ -27,6 +28,8 @@ const props = defineProps<{
     tables: Array<{ id: number; name: string; status: string; seats: number }>
     orderTypes: Option[]
     paymentMethods: Option[]
+    /** QR ของบิลนี้ที่ยังมีชีวิตอยู่ — ใบที่รอเงิน หรือใบที่เงินเข้าแล้วรอปิดบิล */
+    charge?: PaymentCharge | null
     openOrders: Array<Record<string, any>>
     kitchenTickets: Array<Record<string, any>>
     courses: Array<{ value: number; label: string; color: string }>
@@ -35,6 +38,52 @@ const props = defineProps<{
 const activeCategory = ref<number | 'all'>('all')
 const search = ref('')
 const showPayment = ref(false)
+const showQr = ref(false)
+
+/*
+| สถานะของ QR เก็บไว้ที่หน้านี้ ไม่ใช่ในหน้าต่าง QR
+|
+| เพราะปุ่มบนหน้าหลักต้องเปลี่ยนตามด้วย ("โชว์ QR" → "เงินเข้าแล้ว รอปิดบิล")
+| ถ้าเก็บไว้ในหน้าต่าง พอพนักงานปิดหน้าต่างไปดูโต๊ะอื่นแล้วกลับมา
+| หน้าหลักจะยังบอกว่าไม่มีอะไรค้าง ทั้งที่เงินเข้ามาแล้ว
+*/
+const charge = ref<PaymentCharge | null>(props.charge ?? null)
+
+// เปลี่ยนบิล = QR ของบิลเดิมไม่เกี่ยวแล้ว ต้องไม่ค้างมาให้เข้าใจผิดว่าเป็นของบิลใหม่
+watch(
+    () => [props.order?.id ?? null, props.charge ?? null] as const,
+    ([, next]) => (charge.value = next),
+)
+
+/** เงินเข้าแล้วแต่ยังไม่ได้ปิดบิล — พนักงานต้องเห็นจากหน้าหลักโดยไม่ต้องเปิดหน้าต่าง */
+const qrPaid = computed(() => charge.value?.status === 'paid')
+
+/** QR ที่ยังรอลูกค้าสแกนอยู่ */
+const qrPending = computed(() => charge.value?.status === 'pending')
+
+/**
+ * พนักงานกดปิดบิลจากหน้าต่าง QR
+ *
+ * เติมยอดให้เป็นพร้อมเพย์เต็มจำนวนและใส่เลขอ้างอิงของรายการนั้นไว้ให้
+ * เพื่อให้แถว payments ที่เกิดขึ้นตรงกับ QR ใบนั้นจริง ๆ — ฝั่งเซิร์ฟเวอร์
+ * ใช้ยอดเป็นตัวจับคู่ ถ้าพนักงานพิมพ์ยอดเองแล้วพลาด เงินจะไม่ถูกผูกเข้าบิล
+ */
+function settleFromQr(paid: PaymentCharge) {
+    showQr.value = false
+    paymentPrefill.value = {
+        method: 'promptpay',
+        amount: paid.paid_amount ?? paid.amount,
+        reference: paid.uuid,
+    }
+    showPayment.value = true
+}
+
+const paymentPrefill = ref<{ method: string; amount: number; reference: string } | null>(null)
+
+// เปิดหน้าต่างชำระเงินเองโดยไม่ผ่าน QR = ไม่มีอะไรต้องเติมไว้ล่วงหน้า
+watch(showPayment, (value) => {
+    if (!value) paymentPrefill.value = null
+})
 const showDiscount = ref(false)
 const modifierProduct = ref<Product | null>(null)
 
@@ -746,6 +795,25 @@ const categoryColor = (id: number | null) =>
                         >
                             ชำระเงิน {{ money(order.grand_total) }} บาท
                         </Button>
+
+                        <!--
+                            ปุ่มโชว์ QR — แยกจากปุ่มชำระเงินโดยตั้งใจ
+                            "ให้ลูกค้าสแกน" กับ "บันทึกว่ารับเงินแล้ว" เป็นคนละการกระทำ
+                            และ QR ต้องใหญ่พอให้ลูกค้าดูจากอีกฝั่งเคาน์เตอร์ได้
+                        -->
+                        <Button
+                            v-if="!isOffline"
+                            :variant="qrPaid ? 'default' : 'outline'"
+                            size="lg"
+                            class="w-full"
+                            :disabled="activeItems.length === 0 || pendingLines.length > 0 || pendingPayment"
+                            @click="showQr = true"
+                        >
+                            <component :is="qrPaid ? BadgeCheck : QrCode" />
+                            <template v-if="qrPaid">เงินเข้าแล้ว — กดเพื่อปิดบิล</template>
+                            <template v-else-if="qrPending">ดู QR ที่ค้างอยู่</template>
+                            <template v-else>โชว์ QR ให้ลูกค้าสแกน</template>
+                        </Button>
                     </div>
                 </template>
 
@@ -791,6 +859,16 @@ const categoryColor = (id: number | null) =>
             v-model:open="showPayment"
             :order="order"
             :methods="paymentMethods"
+            :prefill="paymentPrefill"
+        />
+
+        <PaymentQrDialog
+            v-if="order"
+            v-model:open="showQr"
+            :order="order"
+            :charge="charge"
+            @update:charge="charge = $event"
+            @settle="settleFromQr"
         />
 
         <OfflineCashDialog

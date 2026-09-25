@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\CashSettlementStatus;
 use App\Models\Concerns\BelongsToBranch;
+use App\Models\Concerns\HasBusinessDate;
 use App\Support\Money;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -12,7 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class CashSettlement extends Model
 {
-    use BelongsToBranch, HasFactory;
+    use BelongsToBranch, HasBusinessDate, HasFactory;
 
     protected $guarded = [];
 

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\StoreType;
+use App\Enums\VoucherBase;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -37,6 +38,7 @@ class Branch extends Model
         'rounding_mode' => 0,
         'business_day_start' => '05:00:00',
         'is_accepting_online_orders' => true,
+        'default_voucher_base' => 'menu_total',
         'open_time' => '09:00:00',
         'close_time' => '21:00:00',
         'prep_minutes' => 20,
@@ -67,6 +69,7 @@ class Branch extends Model
             'restrict_alcohol_hours' => 'boolean',
             'alcohol_hours' => 'array',
             'store_type' => StoreType::class,
+            'default_voucher_base' => VoucherBase::class,
             // 7 ตำแหน่ง ละเอียดระดับ ~1 ซม. — cast เป็น string ของ decimal ไม่ใช่ float
             // เพราะ float ทำให้พิกัดเพี้ยนท้าย ๆ ทศนิยมเวลาบันทึกกลับ
             'latitude' => 'decimal:7',

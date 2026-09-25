@@ -280,17 +280,63 @@ class CashSettlementTest extends TestCase
         $this->paidCashBill(100);
         $this->heldEntry(200);
 
-        $this->get('/pos/cash-settlement')
+        /*
+        | หน้านี้อยู่หลัง permission:cash.settle ซึ่ง Permission::defaultsFor
+        | ให้ผู้จัดการขึ้นไป ไม่ให้แคชเชียร์ — คนที่นับเงินกับคนที่รับรองว่าเงินครบ
+        | ต้องไม่ใช่คนเดียวกัน (ด่านข้างล่างคุมเส้นนั้นไว้)
+        */
+        $this->actingAs($this->makeUser('manager', 'cs-manager@test.local'))
+            ->get('/pos/cash-settlement')
             ->assertOk()
             ->assertInertia(fn (AssertableInertia $page) => $page
-                ->where('settlement.expected_amount', 100.0)
-                ->where('settlement.held_cash_amount', 200.0)
-                ->where('settlement.due_amount', 300.0)
+                ->where('settlement.expected_amount', $this->money(100))
+                ->where('settlement.held_cash_amount', $this->money(200))
+                ->where('settlement.due_amount', $this->money(300))
                 ->where('unresolvedHeld.count', 1)
-                ->where('unresolvedHeld.amount', 200.0));
+                ->where('unresolvedHeld.amount', $this->money(200)));
+    }
+
+    public function test_a_cashier_cannot_open_the_hand_over_screen(): void
+    {
+        /*
+        | คนที่รับเงินเข้าลิ้นชักต้องไม่ใช่คนที่แจ้งว่าส่งเงินครบแล้ว
+        | ถ้าเป็นคนเดียวกัน ตัวเลขในใบนำส่งจะไม่มีใครถ่วงดุล
+        |
+        | ด่านนี้ยังกันการ "แก้ให้เทสต์ผ่าน" ด้วยการแจก cash.settle ให้แคชเชียร์
+        | ซึ่งเป็นทางที่ง่ายที่สุดและผิดที่สุดเวลาด่านข้างบนตกเพราะสิทธิ์
+        */
+        $this->actingAs($this->cashier)
+            ->get('/pos/cash-settlement')
+            ->assertForbidden();
     }
 
     /* ---------- ตัวช่วย ---------- */
+
+    /**
+     * เทียบยอดเงินที่เดินทางผ่าน JSON มาแล้ว
+     *
+     * ── กับดักที่ด่านนี้แก้ ─────────────────────────────────────────────
+     * JSON มีชนิดตัวเลขชนิดเดียว `json_encode(100.0)` ได้ `100`
+     * แล้ว `json_decode('100')` คืน **int** ไม่ใช่ float
+     *
+     * `assertInertia()->where()` เทียบแบบเข้มงวด (`===`) การเขียน
+     * `->where('settlement.expected_amount', 100.0)` จึงตกด้วยข้อความ
+     * "Failed asserting that 100 is identical to 100.0" — ตกตลอดไป
+     * ไม่ว่าฝั่งเซิร์ฟเวอร์จะถูกแค่ไหน
+     *
+     * และมันตกเฉพาะยอดที่เป็นจำนวนเต็ม ยอดอย่าง 100.50 จะผ่าน
+     * เพราะยังเป็น float หลัง decode — กับดักที่โผล่ไม่สม่ำเสมอแบบนี้
+     * เสียเวลาหาสาเหตุมากกว่าตกทุกครั้ง
+     *
+     * ── ทำไมไม่เขียน 100 เฉย ๆ ─────────────────────────────────────────
+     * มันจะผ่านวันนี้ แล้วตกวันที่ใครเปลี่ยนฟิกซ์เจอร์เป็น 100.50
+     * ตัวนี้เทียบค่าของเงินจริง ๆ ไม่ใช่ชนิดที่ JSON เผอิญเลือกให้
+     */
+    protected function money(float $baht): \Closure
+    {
+        // เผื่อครึ่งสตางค์ — เล็กกว่าหน่วยเงินที่เล็กสุด แต่กันความคลาดของ float
+        return fn ($actual) => is_numeric($actual) && abs((float) $actual - $baht) < 0.005;
+    }
 
     protected function today(): string
     {

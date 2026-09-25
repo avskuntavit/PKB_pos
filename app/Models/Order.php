@@ -7,6 +7,7 @@ use App\Enums\OrderSource;
 use App\Enums\OrderStatus;
 use App\Enums\OrderType;
 use App\Models\Concerns\BelongsToBranch;
+use App\Models\Concerns\HasBusinessDate;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -17,7 +18,7 @@ use Illuminate\Support\Str;
 
 class Order extends Model
 {
-    use BelongsToBranch, HasFactory;
+    use BelongsToBranch, HasBusinessDate, HasFactory;
 
     protected $guarded = [];
 

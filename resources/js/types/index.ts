@@ -231,6 +231,39 @@ export interface Order {
     customer?: { id: number; name: string; phone: string | null } | null
 }
 
+/**
+ * QR รับเงินหนึ่งใบ — รูปที่เซิร์ฟเวอร์ส่งมาให้หน้า POS
+ *
+ * ประกอบที่ PaymentChargeController::chargePayload() ที่เดียว ทั้งตอนโหลดหน้า
+ * และตอนถามซ้ำ จึงได้ฟิลด์ชุดเดียวกันเสมอ
+ */
+export interface PaymentCharge {
+    id: number
+    uuid: string
+    order_id: number
+    status: 'pending' | 'paid' | 'expired' | 'failed' | 'cancelled' | 'mismatch' | 'unmatched'
+    status_label: string
+    provider: string
+    provider_label: string
+    /** false = QR ของร้านเอง ระบบตรวจยอดให้ไม่ได้ พนักงานต้องดูสลิป */
+    verifies_automatically: boolean
+    amount: number
+    /** ยอดที่เข้ามาจริง — null เมื่อยังไม่มีเงินเข้า */
+    paid_amount: number | null
+    qr_payload: string | null
+    expires_at: string | null
+    /**
+     * ข้อความที่แสดงได้ — **ของเรา ไม่ใช่ของเกตเวย์**
+     *
+     * คอลัมน์ failure_message ในฐานข้อมูลเก็บข้อความดิบของเกตเวย์ไว้ด้วย
+     * ซึ่งอาจมีรหัสภายในติดมา จึงไม่ถูกส่งออกมาที่เบราว์เซอร์เลย
+     * (ดู PaymentChargeController::noteFor())
+     */
+    note: string | null
+    /** ผูกเข้ากับแถว payments แล้วหรือยัง */
+    settled: boolean
+}
+
 /** บิลของโต๊ะ ในมุมลูกค้าที่นั่งอยู่ — มาจาก TableBillService */
 export interface TableBillItem {
     id: number

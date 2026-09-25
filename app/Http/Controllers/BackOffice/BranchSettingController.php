@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\BackOffice;
 
+use App\Enums\VoucherBase;
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Services\BranchSettingService;
@@ -10,6 +11,7 @@ use App\Services\PromptPayService;
 use App\Support\CurrentBranch;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -27,11 +29,25 @@ class BranchSettingController extends Controller
                 'business_day_start', 'open_time', 'close_time', 'prep_minutes',
                 'is_accepting_online_orders', 'award_points_online', 'qr_requires_open_table',
                 'promptpay_id', 'promptpay_name',
+                'default_voucher_base',
                 'staff_benefit_enabled', 'staff_benefit_monthly_cap', 'staff_benefit_exclude_alcohol',
                 'restrict_alcohol_hours', 'alcohol_hours',
                 'cover_path', 'logo_path', 'promo_title', 'theme_color',
             ]),
             'paymentMethods' => $settings->allMethodsFor($branch),
+            'voucherBases' => VoucherBase::options(),
+
+            /*
+            | ลิงก์ประจำสาขา — หน้าจอประกาศ prop นี้ไว้และใช้ใน CopyField อยู่แล้ว
+            | แต่ไม่มีใครส่งมาให้ ทำให้ `links.order` เป็น undefined แล้วหน้าพังตอน render
+            |
+            | สร้างที่ฝั่งเซิร์ฟเวอร์เพราะ route() รู้ APP_URL และ prefix ที่แท้จริง
+            | ฝั่งหน้าจอเดาโดเมนเองไม่ได้ (และเคยเดาผิดมาแล้วตอนย้ายไปรันในวงแลน)
+            */
+            'links' => [
+                'order' => route('storefront.menu.branch', $branch->code),
+                'queue' => route('queue.board', $branch->code),
+            ],
             // สเปกรูปไว้เขียนกำกับใต้ปุ่มอัปโหลด ใช้ค่าชุดเดียวกับฝั่งเซิร์ฟเวอร์
             'imageSpecs' => [
                 'cover' => ImageService::spec('cover'),
@@ -87,6 +103,9 @@ class BranchSettingController extends Controller
                     || $fail('พร้อมเพย์ต้องเป็นเบอร์มือถือ 10 หลัก เลขประจำตัว 13 หลัก หรือเลข e-Wallet 15 หลัก'),
             ],
             'promptpay_name' => ['nullable', 'string', 'max:60'],
+
+            // ค่าตั้งต้นของคูปองใหม่ — คูปองที่สร้างไปแล้วไม่ถูกแตะ
+            'default_voucher_base' => ['required', Rule::enum(VoucherBase::class)],
 
             'staff_benefit_enabled' => ['boolean'],
             'staff_benefit_monthly_cap' => ['required', 'numeric', 'min:0'],

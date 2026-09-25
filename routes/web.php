@@ -251,6 +251,26 @@ Route::middleware(['auth', 'permission:backoffice.access'])
             Route::get('settings/branch', [BackOffice\BranchSettingController::class, 'edit'])->name('settings.branch');
             Route::put('settings/branch', [BackOffice\BranchSettingController::class, 'update'])->name('settings.branch.update');
 
+            /*
+            | บัญชีผู้ให้บริการชำระเงินของสาขา
+            |
+            | อยู่ในชุดสิทธิ์เดียวกับตั้งค่าสาขา ซึ่งมีแต่เจ้าของร้าน —
+            | กุญแจรับเงินไม่ใช่ของที่ผู้จัดการต้องแตะ
+            |
+            | {provider} เป็น enum ที่ Laravel resolve ให้เอง ค่าที่ไม่รู้จักได้ 404
+            | จึงไม่ต้องตรวจชื่อเจ้าในตัว controller อีกชั้น
+            */
+            Route::get('settings/payment-providers', [BackOffice\PaymentProviderController::class, 'index'])
+                ->name('settings.payment-providers');
+            Route::put('settings/payment-providers/{provider}', [BackOffice\PaymentProviderController::class, 'save'])
+                ->name('settings.payment-providers.save');
+            Route::post('settings/payment-providers/{provider}/activate', [BackOffice\PaymentProviderController::class, 'activate'])
+                ->name('settings.payment-providers.activate');
+            Route::post('settings/payment-providers/{provider}/deactivate', [BackOffice\PaymentProviderController::class, 'deactivate'])
+                ->name('settings.payment-providers.deactivate');
+            Route::delete('settings/payment-providers/{provider}/credentials', [BackOffice\PaymentProviderController::class, 'clearCredentials'])
+                ->name('settings.payment-providers.credentials.destroy');
+
             // เป้ายอดขายรายเดือน — ฐานของทุกตัวเลข "เทียบแผน" บนหน้า dashboard
             Route::get('settings/targets', [BackOffice\SalesTargetController::class, 'index'])->name('settings.targets');
             Route::put('settings/targets', [BackOffice\SalesTargetController::class, 'update'])->name('settings.targets.update');
@@ -326,6 +346,28 @@ Route::middleware('auth')
             ->middleware('idempotent')
             ->name('orders.pay');
         Route::get('orders/{order}/receipt', [Pos\PaymentController::class, 'receipt'])->name('receipt');
+
+        /*
+        | QR รับเงินที่เคาน์เตอร์ — ตอบเป็น JSON เพราะหน้าต่าง QR ถามสถานะซ้ำ ๆ
+        |
+        | ── throttle ของเส้นถามสถานะตั้งไว้หลวมโดยตั้งใจ ──────────────────
+        | เพดานที่ป้องกันเกตเวย์ไม่ได้อยู่ตรงนี้ แต่อยู่ที่ PollSchedule::SCREEN_FLOOR_SECONDS
+        | ซึ่งทำให้เราถามเกตเวย์ไม่เกินนาทีละ 12 ครั้งต่อหนึ่งใบ ไม่ว่าหน้าจอจะถามถี่แค่ไหน
+        | ตัวเลขตรงนี้จึงกันแค่ "ยิงรัวจนเซิร์ฟเวอร์ในร้านทำงานไม่ทัน" เท่านั้น
+        | ตั้งแน่นเกินจะกลายเป็นเคาน์เตอร์ที่สามเปิด QR ไม่ได้เพราะโดนเพื่อนกันเอง
+        |
+        | ไม่ใส่ middleware idempotent เพราะมันตอบเป็น redirect ซึ่งฝั่ง fetch() อ่านไม่ออก
+        | การกันออก QR ซ้ำอยู่ใน PaymentChargeService::open() ด้วยล็อกของบิลแทน
+        */
+        Route::post('orders/{order}/charge', [Pos\PaymentChargeController::class, 'store'])
+            ->middleware('throttle:30,1')
+            ->name('orders.charge');
+        Route::get('charges/{charge}', [Pos\PaymentChargeController::class, 'show'])
+            ->middleware('throttle:240,1')
+            ->name('charges.show');
+        Route::delete('charges/{charge}', [Pos\PaymentChargeController::class, 'destroy'])
+            ->middleware('throttle:30,1')
+            ->name('charges.destroy');
 
         // นำส่งเงินสดสิ้นวัน — เงินสดที่รับมา พนักงานโอนเข้าบัญชีบริษัทแทนการนำฝาก
         Route::middleware('permission:cash.settle')->group(function () {

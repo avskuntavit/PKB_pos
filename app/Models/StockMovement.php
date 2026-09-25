@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\StockMovementType;
 use App\Models\Concerns\BelongsToBranch;
+use App\Models\Concerns\HasBusinessDate;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -16,7 +17,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class StockMovement extends Model
 {
-    use BelongsToBranch, HasFactory;
+    use BelongsToBranch, HasBusinessDate, HasFactory;
 
     protected $guarded = [];
 

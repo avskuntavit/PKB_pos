@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\Order;
 use App\Services\OrderService;
+use App\Services\PaymentChargeService;
 use App\Services\PaymentService;
 use App\Services\StaffBenefitService;
 use App\Support\CurrentBranch;
@@ -50,6 +51,19 @@ class PaymentController extends Controller
         } catch (\DomainException $e) {
             return back()->with('error', $e->getMessage());
         }
+
+        /*
+        | ปิดเรื่อง QR ของบิลนี้ให้เรียบร้อย — ต้องอยู่ **หลัง** pay() สำเร็จเท่านั้น
+        |
+        | เงินโอนเข้ามาก่อนแล้ว  → ผูกเข้ากับแถว payments ที่เพิ่งสร้าง
+        |                          ไม่งั้นจะมีสองบันทึกที่ไม่มีใครรู้ว่าเป็นเงินก้อนเดียวกัน
+        | ยังไม่เข้า            → ยกเลิก QR ที่ค้างอยู่ ไม่งั้นลูกค้าสแกนใบเดิมได้อีก
+        |                          แล้วเงินจะเข้ามาโดยไม่มีบิลรองรับ ต้องตามคืนทีหลัง
+        |
+        | อยู่นอก try ของ pay() โดยตั้งใจ — ถ้าตรงนี้พลาด บิลก็ปิดไปแล้วจริง
+        | การเด้ง error กลับไปจะทำให้พนักงานเข้าใจว่าปิดไม่สำเร็จแล้วกดซ้ำ
+        */
+        app(PaymentChargeService::class)->settleAfterPayment($order->fresh());
 
         return redirect()->route('pos.receipt', $order)->with('success', 'ชำระเงินเรียบร้อย');
     }

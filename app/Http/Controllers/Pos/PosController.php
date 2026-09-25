@@ -11,10 +11,12 @@ use App\Models\Category;
 use App\Models\DiningTable;
 use App\Models\Order;
 use App\Models\OrderItem;
-use App\Models\ServiceCall;
+use App\Models\PaymentCharge;
 use App\Models\Product;
+use App\Models\ServiceCall;
 use App\Models\Zone;
 use App\Services\BranchSettingService;
+use App\Services\PaymentChargeService;
 use App\Services\ShiftService;
 use App\Support\CurrentBranch;
 use Inertia\Inertia;
@@ -168,6 +170,15 @@ class PosController extends Controller
             // ช่องทางจ่ายมาจากการตั้งค่าสาขา ไม่ใช่ enum ทั้งชุด
             // ร้านที่ปิดรับเงินสดจะไม่เห็นปุ่มเงินสดเลย
             'paymentMethods' => app(BranchSettingService::class)->enabledMethods($branch),
+            /*
+            | QR ของบิลนี้ที่ยังมีชีวิตอยู่ — ใบที่รอเงิน หรือใบที่เงินเข้าแล้วแต่ยังไม่ปิดบิล
+            |
+            | ส่งมาตั้งแต่ตอนโหลดหน้าเพราะสองสถานการณ์นี้เกิดจริงทุกวัน:
+            | พนักงานรีเฟรชหน้า หรือเปลี่ยนเครื่องไปดูอีกจอ — ถ้าไม่ส่งมา
+            | จอจะบอกว่าไม่มีอะไรค้าง แล้วพนักงานกดออก QR ใบใหม่ทั้งที่ใบเดิม
+            | ยังใช้ได้ หรือแย่กว่านั้นคือเก็บเงินสดซ้ำทั้งที่เงินโอนเข้ามาแล้ว
+            */
+            'charge' => $order?->exists ? $this->liveCharge($order) : null,
             'openOrders' => Order::where('branch_id', $branch->id)
                 ->where('status', OrderStatus::Open->value)
                 ->with('diningTable:id,name')
@@ -175,4 +186,23 @@ class PosController extends Controller
                 ->get(['id', 'order_no', 'dining_table_id', 'grand_total', 'opened_at']),
         ]);
     }
+
+    /**
+     * QR ของบิลนี้ที่หน้าจอต้องรู้ — ใบที่รอเงิน หรือใบที่เงินเข้าแล้วรอปิดบิล
+     *
+     * เรียงให้ใบที่ "เงินเข้าแล้ว" ชนะใบที่ "ยังรอเงิน" เสมอ เพราะถ้ามีทั้งคู่
+     * สิ่งที่พนักงานต้องทำต่อคือปิดบิล ไม่ใช่รอเงินของใบที่ยังค้าง
+     *
+     * @return array<string, mixed>|null
+     */
+    protected function liveCharge(Order $order): ?array
+    {
+        $charges = app(PaymentChargeService::class);
+
+        $charge = $charges->awaitingCashier($order)
+            ?? PaymentCharge::open()->where('order_id', $order->id)->latest('id')->first();
+
+        return $charge ? PaymentChargeController::chargePayload($charge) : null;
+    }
+
 }

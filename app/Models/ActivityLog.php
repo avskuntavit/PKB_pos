@@ -3,13 +3,14 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToBranch;
+use App\Models\Concerns\HasBusinessDate;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ActivityLog extends Model
 {
-    use BelongsToBranch, HasFactory;
+    use BelongsToBranch, HasBusinessDate, HasFactory;
 
     protected $guarded = [];
 
@@ -56,6 +57,10 @@ class ActivityLog extends Model
             'shift.close' => 'ปิดรอบการขาย',
             'period.close' => 'ปิดงวดบัญชี',
             'period.reopen' => 'เปิดงวดบัญชีกลับมา',
+            'payment_charge.open' => 'ออก QR รับเงิน',
+            'payment_charge.paid' => 'เงินเข้าจาก QR',
+            'payment_charge.needs_decision' => 'เงินเข้าแต่ลงบิลไม่ได้',
+            'payment_account.update' => 'แก้ไขบัญชีเกตเวย์ชำระเงิน',
         ];
     }
 }

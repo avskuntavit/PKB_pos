@@ -181,6 +181,41 @@ class VoucherTest extends TestCase
         $this->assertSame('50.00', $order->voucher_discount, 'คิดจากยอดค่าอาหารเหมือนเดิม');
     }
 
+    public function test_a_fresh_voucher_behaves_the_same_in_memory_and_after_reloading(): void
+    {
+        /*
+        | ด่านที่กันบั๊กเงียบที่สุดของโมเดลนี้
+        |
+        | `Voucher::create()` คืน object ที่มีแค่คอลัมน์ที่เราส่งไป คอลัมน์ที่ปล่อยให้
+        | ฐานข้อมูลเติมค่าตั้งต้นจะเป็น null ใน object นั้น และ Eloquent ไม่ฟ้องอะไรเลย
+        |
+        | ผลจริง: `is_active` เป็น null → `isRedeemable()` คืน false → `discountFor()`
+        | คืน **0** คูปองที่ควรลด 50 บาทกลายเป็นลด 0 บาทโดยไม่มีข้อผิดพลาดใด ๆ
+        |
+        | ด่านนี้เทียบสองฝั่ง ถ้าวันหน้ามีคนเปลี่ยนค่าตั้งต้นที่ migration
+        | แต่ลืมเปลี่ยนที่ $attributes (หรือกลับกัน) ด่านนี้จะฟ้องทันที
+        */
+        $voucher = $this->voucher('amount', 50, minSpend: 0, base: VoucherBase::MenuTotal);
+
+        // ฝั่งหน่วยความจำ — ก่อนแตะฐานข้อมูลเลย
+        $this->assertTrue($voucher->is_active, 'คูปองใหม่ต้องใช้งานได้ทันที ไม่ใช่ null');
+        $this->assertSame(0, $voucher->used_count, 'จำนวนครั้งที่ใช้ต้องเป็น 0 ไม่ใช่ null');
+        $this->assertSame(50.0, $voucher->discountFor(500), 'ลดได้จริงโดยไม่ต้อง reload');
+
+        // ฝั่งฐานข้อมูล — และต้องตอบเหมือนกันทุกช่อง
+        $reloaded = $voucher->fresh();
+
+        foreach (['type', 'value', 'min_spend', 'base_mode', 'usage_limit', 'used_count', 'is_active'] as $field) {
+            $this->assertEquals(
+                $reloaded->{$field},
+                $voucher->{$field},
+                "ค่าตั้งต้นของ {$field} ในหน่วยความจำกับในฐานข้อมูลต้องตรงกัน",
+            );
+        }
+
+        $this->assertSame(50.0, $reloaded->discountFor(500));
+    }
+
     /* ---------- กติกาทั่วไปของคูปอง (ไม่เคยมีเทสต์เลย) ---------- */
 
     public function test_an_unknown_code_is_refused(): void
@@ -278,20 +313,74 @@ class VoucherTest extends TestCase
         $this->assertSame(VoucherBase::AmountDue, Voucher::where('code', 'SORRY100')->firstOrFail()->base_mode);
     }
 
-    public function test_creating_a_voucher_without_saying_which_base_is_rejected(): void
+    public function test_a_voucher_created_without_a_base_takes_the_branch_default(): void
     {
-        // บังคับให้เลือก เพราะสองโหมดให้ผลต่างกันเป็นเงิน คนตั้งต้องรู้ตัวว่าเลือกอะไร
+        $this->branch->update(['default_voucher_base' => VoucherBase::AmountDue]);
+
         $this->actingAs($this->makeUser(UserRole::Manager, 'vc-manager@test.local'));
 
         $this->post('/backoffice/vouchers', [
             'code' => 'NOBASE',
-            'name' => 'ลืมเลือกฐาน',
+            'name' => 'ไม่ได้เลือกฐาน',
             'type' => 'amount',
             'value' => 50,
             'usage_limit' => 1,
-        ])->assertSessionHasErrors('base_mode');
+        ])->assertSessionHasNoErrors();
 
-        $this->assertSame(0, Voucher::count());
+        $this->assertSame(
+            VoucherBase::AmountDue,
+            Voucher::where('code', 'NOBASE')->firstOrFail()->base_mode,
+            'ตกไปใช้ค่าเริ่มต้นของสาขา ไม่ใช่ค่าคงที่ในโค้ด',
+        );
+    }
+
+    public function test_a_voucher_can_still_override_the_branch_default(): void
+    {
+        // ค่าเริ่มต้นเป็นแค่ค่าตั้งต้น ไม่ใช่กฎบังคับ — คูปองชดเชยหนึ่งใบต้องตั้งสวนได้
+        $this->branch->update(['default_voucher_base' => VoucherBase::MenuTotal]);
+
+        $this->actingAs($this->makeUser(UserRole::Manager, 'vc-manager@test.local'));
+
+        $this->post('/backoffice/vouchers', [
+            'code' => 'SORRY',
+            'name' => 'ชดเชยลูกค้า',
+            'type' => 'amount',
+            'value' => 100,
+            'usage_limit' => 1,
+            'base_mode' => 'amount_due',
+        ])->assertSessionHasNoErrors();
+
+        $this->assertSame(VoucherBase::AmountDue, Voucher::where('code', 'SORRY')->firstOrFail()->base_mode);
+    }
+
+    public function test_changing_the_branch_default_never_touches_vouchers_already_issued(): void
+    {
+        /*
+        | ด่านที่สำคัญที่สุดของค่าเริ่มต้นระดับสาขา
+        |
+        | ถ้าคูปองอ่านฐานจากสาขาสด ๆ ตอนคิดเงิน การกดเปลี่ยนค่านี้หนึ่งครั้ง
+        | จะไปแก้เงื่อนไขของคูปองทุกใบที่พิมพ์แจกออกไปแล้ว — ผิดสัญญากับลูกค้า
+        | ฐานจึงถูกคัดลอกลงแถวของคูปองตอนสร้าง แล้วไม่ขยับอีก
+        */
+        $this->branch->update(['default_voucher_base' => VoucherBase::MenuTotal]);
+
+        $voucher = $this->voucher('percent', 10, minSpend: 400, base: VoucherBase::MenuTotal);
+
+        $this->branch->update(['default_voucher_base' => VoucherBase::AmountDue]);
+
+        $this->assertSame(VoucherBase::MenuTotal, $voucher->fresh()->base_mode);
+
+        // และยังใช้ได้เหมือนเดิมบนบิลที่ได้โปรไปแล้ว
+        $this->promo(200);
+        $order = $this->payWithVoucher($voucher->fresh(), dishes: 5);
+
+        $this->assertSame('50.00', $order->voucher_discount);
+    }
+
+    public function test_the_branch_starts_on_the_behaviour_the_system_always_had(): void
+    {
+        // สาขาที่สร้างใหม่โดยไม่ระบุอะไร ต้องได้ menu_total = พฤติกรรมเดิม
+        $this->assertSame(VoucherBase::MenuTotal, $this->makeBranch('VC9')->default_voucher_base);
     }
 
     public function test_a_duplicate_code_gets_a_message_not_a_crash(): void
@@ -353,7 +442,31 @@ class VoucherTest extends TestCase
             ->assertInertia(fn (AssertableInertia $page) => $page
                 ->has('bases', 2)
                 ->where('bases.0.value', 'menu_total')
-                ->where('bases.1.value', 'amount_due'));
+                ->where('bases.1.value', 'amount_due')
+                ->where('defaultBase', 'menu_total'));
+    }
+
+    public function test_the_voucher_screen_preselects_the_branch_default(): void
+    {
+        $this->branch->update(['default_voucher_base' => VoucherBase::AmountDue]);
+
+        $this->actingAs($this->makeUser(UserRole::Manager, 'vc-manager@test.local'));
+
+        $this->get('/backoffice/vouchers')
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page->where('defaultBase', 'amount_due'));
+    }
+
+    public function test_the_branch_settings_screen_can_change_the_default(): void
+    {
+        // ผู้จัดการไม่มีสิทธิ์ branch.settings — เจ้าของร้านเท่านั้น (Permission::defaultsFor)
+        $this->actingAs($this->makeUser(UserRole::Owner, 'vc-owner@test.local'));
+
+        $this->get('/backoffice/settings/branch')
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->has('voucherBases', 2)
+                ->where('branch.default_voucher_base', 'menu_total'));
     }
 
     /* ---------- ตัวช่วย ---------- */

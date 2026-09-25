@@ -19,6 +19,8 @@ import type { Paginated } from '@/types'
 const props = defineProps<{
     vouchers: Paginated<Record<string, any>>
     bases: Array<{ value: string; label: string; hint: string }>
+    /** ค่าเริ่มต้นที่สาขานี้ตั้งไว้ — เลือกไว้ให้ล่วงหน้า แก้ได้ต่อคูปอง */
+    defaultBase: string
 }>()
 
 const showModal = ref(false)
@@ -33,8 +35,8 @@ const form = useForm({
     usage_limit: 1,
     starts_at: '',
     ends_at: '',
-    // ค่าเริ่มต้นเป็นพฤติกรรมเดิมของระบบ คนที่ไม่รู้ว่าต้องเลือกอะไรจะได้ของเดิม
-    base_mode: 'menu_total',
+    // ตั้งต้นจากค่าของสาขา ไม่ใช่ค่าคงที่ในหน้าจอ — ร้านตั้งไว้แล้วต้องไม่ต้องมาเลือกซ้ำทุกใบ
+    base_mode: props.defaultBase,
 })
 
 /** คำอธิบายของตัวเลือกที่กำลังเลือกอยู่ — โชว์ใต้ช่องเลย ไม่ต้องเดา */
@@ -158,6 +160,9 @@ function submit() {
                         <option v-for="b in bases" :key="b.value" :value="b.value">{{ b.label }}</option>
                     </Select>
                     <p class="text-xs text-muted-foreground">{{ baseHint }}</p>
+                    <p v-if="form.base_mode === defaultBase" class="text-xs text-muted-foreground">
+                        ค่าเริ่มต้นของสาขานี้ — เปลี่ยนที่ตั้งค่าสาขาได้ถ้าอยากให้คูปองใหม่ใช้อีกแบบ
+                    </p>
                 </div>
 
                 <div class="grid grid-cols-2 gap-3">

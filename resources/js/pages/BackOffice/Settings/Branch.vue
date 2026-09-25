@@ -37,6 +37,7 @@ interface ImageSpec {
 const props = defineProps<{
     branch: Record<string, any>
     paymentMethods: PaymentRow[]
+    voucherBases: Array<{ value: string; label: string; hint: string }>
     imageSpecs: { cover: ImageSpec; logo: ImageSpec }
     /** ลิงก์ประจำสาขา — เซิร์ฟเวอร์สร้างให้ตาม APP_URL จะได้ไม่ต้องเดาโดเมนฝั่งนี้ */
     links: { order: string; queue: string }
@@ -68,6 +69,8 @@ const form = useForm({
     promptpay_id: props.branch.promptpay_id ?? '',
     promptpay_name: props.branch.promptpay_name ?? '',
 
+    default_voucher_base: props.branch.default_voucher_base ?? 'menu_total',
+
     staff_benefit_enabled: Boolean(props.branch.staff_benefit_enabled),
     staff_benefit_monthly_cap: Number(props.branch.staff_benefit_monthly_cap ?? 0),
     staff_benefit_exclude_alcohol: Boolean(props.branch.staff_benefit_exclude_alcohol),
@@ -98,6 +101,11 @@ const THEME_PALETTES = [
     { label: 'เหลืองอำพัน (Amber)', value: '#f59e0b' },
     { label: 'เทาดำมินิมอล (Slate)', value: '#334155' },
 ]
+
+/** คำอธิบายของฐานคูปองที่เลือกอยู่ — โชว์ใต้ช่องเลย ไม่ต้องเดา */
+const voucherBaseHint = computed(
+    () => props.voucherBases.find((b) => b.value === form.default_voucher_base)?.hint ?? '',
+)
 
 /* ---------- ตัวอย่างหน้าร้านแบบสด ---------- */
 
@@ -499,6 +507,26 @@ function submit() {
                         />
                     </li>
                 </ul>
+            </SectionCard>
+
+            <SectionCard title="รหัสส่วนลด (voucher)">
+                <div class="space-y-1">
+                    <Label for="vbase">ฐานที่คูปองใหม่จะใช้คิด</Label>
+                    <Select id="vbase" v-model="form.default_voucher_base">
+                        <option v-for="b in voucherBases" :key="b.value" :value="b.value">{{ b.label }}</option>
+                    </Select>
+                    <p class="text-xs text-muted-foreground">{{ voucherBaseHint }}</p>
+                </div>
+
+                <p class="mt-3 flex items-start gap-2 rounded-lg bg-muted/50 p-2.5 text-xs">
+                    <TriangleAlert class="mt-0.5 size-3.5 shrink-0 text-[var(--status-warning)]" />
+                    <span>
+                        ค่านี้ใช้กับคูปองที่ <strong>สร้างใหม่</strong> เท่านั้น
+                        คูปองที่แจกออกไปแล้วยังคิดตามฐานเดิมของมัน —
+                        เงื่อนไขที่พิมพ์อยู่บนคูปองในมือลูกค้าเปลี่ยนย้อนหลังไม่ได้
+                        เปลี่ยนรายใบได้ที่หน้ารหัสส่วนลด
+                    </span>
+                </p>
             </SectionCard>
 
             <SectionCard title="สวัสดิการพนักงานองค์กร">

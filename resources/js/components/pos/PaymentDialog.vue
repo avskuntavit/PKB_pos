@@ -18,7 +18,20 @@ import { money } from '@/lib/format'
 import { useIdempotencyKey } from '@/lib/idempotency'
 import type { Option, Order } from '@/types'
 
-const props = defineProps<{ order: Order; methods: Option[] }>()
+const props = defineProps<{
+    order: Order
+    methods: Option[]
+    /**
+     * บรรทัดที่ถูกเติมไว้ให้ตั้งแต่เปิดหน้าต่าง — ใช้ตอนเงินโอนเข้ามาแล้วผ่าน QR
+     *
+     * ── ทำไมต้องเติมให้ ไม่ปล่อยพนักงานพิมพ์เอง ────────────────────────
+     * ฝั่งเซิร์ฟเวอร์จับคู่เงินที่เข้ามากับแถว payments **ด้วยยอด**
+     * ถ้าพนักงานพิมพ์ยอดเองแล้วพลาดไปหนึ่งสตางค์ บิลจะปิดได้ตามปกติ
+     * แต่เงินก้อนนั้นจะไม่ถูกผูกเข้ากับบิล กลายเป็นเงินลอยที่ไม่มีใครเห็น
+     * จนกว่าจะกระทบยอดปลายเดือน
+     */
+    prefill?: { method: string; amount: number; reference: string } | null
+}>()
 const open = defineModel<boolean>('open', { default: false })
 
 const grandTotal = computed(() => Number(props.order.grand_total))
@@ -61,8 +74,20 @@ const { rotate: rotateKey, headers: idempotencyHeaders } = useIdempotencyKey()
 watch(open, (value) => {
     if (value) {
         form.reset()
-        form.lines = [newLine(suggestedMethod.value, grandTotal.value)]
-        confirmedExternally.value = false
+        form.lines = props.prefill
+            ? [{
+                method: props.prefill.method,
+                amount: props.prefill.amount,
+                received: props.prefill.amount,
+                reference: props.prefill.reference,
+            }]
+            : [newLine(suggestedMethod.value, grandTotal.value)]
+        /*
+        | เงินที่เข้ามาผ่านเกตเวย์แล้วไม่ต้องให้ติ๊กยืนยันอีก
+        | ระบบเห็นเงินก้อนนั้นเองแล้ว การบังคับติ๊กจะกลายเป็นพิธีกรรมที่คนกดผ่าน ๆ
+        | แล้ววันที่มันสำคัญจริง (จ่ายผ่านแอปที่ระบบมองไม่เห็น) ก็จะถูกกดผ่านเหมือนกัน
+        */
+        confirmedExternally.value = props.prefill !== null && props.prefill !== undefined
         // บิลใหม่ = ความตั้งใจใหม่ ถ้าใช้คีย์เดิมจะโดนปฏิเสธว่า "บันทึกไปแล้ว"
         rotateKey()
     }

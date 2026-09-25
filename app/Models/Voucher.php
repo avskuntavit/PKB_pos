@@ -14,6 +14,36 @@ class Voucher extends Model
 
     protected $guarded = [];
 
+    /**
+     * ค่าตั้งต้นเดียวกับที่ migration ตั้งไว้ให้คอลัมน์
+     *
+     * ── ทำไมต้องเขียนซ้ำที่นี่ ─────────────────────────────────────────────
+     * `Voucher::create([...])` คืน object ที่มีแค่คอลัมน์ที่เราส่งไป
+     * คอลัมน์ที่ปล่อยให้ฐานข้อมูลเติมค่าตั้งต้นจะเป็น **null ใน object นั้น**
+     * Eloquent ไม่โหลดกลับมาให้และไม่ฟ้องอะไรเลย
+     *
+     * ผลที่เกิดขึ้นจริงคือ `is_active` เป็น null → `isRedeemable()` คืน false
+     * → `discountFor()` คืน **0** โดยไม่มีข้อผิดพลาดใด ๆ
+     * คูปองที่ควรลด 50 บาทกลายเป็นลด 0 บาท และไม่มีใครรู้ว่าทำไม
+     *
+     * อันตรายกว่านั้นคือ `base_mode` ที่เป็น null แล้ว `$voucher->base_mode->baseFor()`
+     * จะเป็น error ตรง ๆ ตอนคิดเงิน
+     *
+     * ค่าพวกนี้ไม่ใช่การเดา — มันคือค่าเดียวกับที่ฐานข้อมูลจะเติมให้อยู่แล้ว
+     * การประกาศไว้ทำให้ object ในหน่วยความจำพูดความจริงเรื่องแถวที่มันจะกลายเป็น
+     * (เทสต์ `a fresh voucher behaves the same in memory and after reloading`
+     *  คุมไว้ว่าสองฝั่งต้องไม่หลุดจากกัน)
+     */
+    protected $attributes = [
+        'type' => 'amount',
+        'value' => 0,
+        'min_spend' => 0,
+        'base_mode' => 'menu_total',
+        'usage_limit' => 1,
+        'used_count' => 0,
+        'is_active' => true,
+    ];
+
     protected function casts(): array
     {
         return [

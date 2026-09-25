@@ -61,6 +61,18 @@ return new class extends Migration
             $table->string('promptpay_id', 20)->nullable();              // เบอร์มือถือ / เลขประจำตัวผู้เสียภาษี
             $table->string('promptpay_name', 60)->nullable();
 
+            /*
+            | ฐานที่คูปองใหม่ของสาขานี้จะถูกตั้งให้เป็นค่าเริ่มต้น
+            |
+            | เป็น "ค่าตั้งต้นตอนสร้าง" ไม่ใช่ค่าที่ถูกอ่านสด ๆ ตอนคิดเงิน —
+            | คูปองทุกใบเก็บฐานของตัวเองไว้ในแถวตัวเอง (vouchers.base_mode)
+            | ถ้าเปลี่ยนค่านี้แล้วคูปองเก่าเปลี่ยนความหมายตาม เท่ากับแก้เงื่อนไข
+            | ที่พิมพ์อยู่บนคูปองที่อยู่ในมือลูกค้าแล้ว ซึ่งทำไม่ได้
+            |
+            | ดู App\Enums\VoucherBase
+            */
+            $table->string('default_voucher_base', 20)->default('menu_total');
+
             // สวัสดิการพนักงานองค์กร
             $table->boolean('staff_benefit_enabled')->default(true);
             $table->decimal('staff_benefit_monthly_cap', 12, 2)->default(0); // 0 = ไม่จำกัด

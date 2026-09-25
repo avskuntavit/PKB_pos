@@ -249,8 +249,22 @@ class PeriodLockService
     /** @return array{bills: int, sales: float, open_bills: int} */
     protected function totalsFor(Branch $branch, string $period): array
     {
+        /*
+        | ขอบช่วงต้องเป็นสตริง 'Y-m-d' ไม่ใช่ Carbon
+        |
+        | `business_date` ถูกเก็บเป็นวันที่ล้วน (ดู HasBusinessDate) แต่ query builder
+        | แปลง Carbon ที่ผูกเข้ามาเป็น 'Y-m-d H:i:s' ตาม $dateFormat ของโมเดล
+        | บน sqlite ที่เทียบสตริงตามตัวอักษร '2026-09-01' >= '2026-09-01 00:00:00'
+        | เป็นเท็จ — **วันแรกของงวดจะหลุดออกไปเงียบ ๆ** แล้วยอดปิดงวดขาดไปหนึ่งวัน
+        |
+        | SQL Server กลืนให้เพราะคอลัมน์เป็นชนิดวันที่จริง อาการจึงโผล่แค่ในเทสต์
+        | ซึ่งเป็นที่เดียวที่ควรจับได้ — จับตรงนี้ด้วยการส่งสตริงไปให้ตรงชนิดกัน
+        */
         $row = Order::where('branch_id', $branch->id)
-            ->whereBetween('business_date', [$this->startOf($period), $this->endOf($period)])
+            ->whereBetween('business_date', [
+                $this->startOf($period)->toDateString(),
+                $this->endOf($period)->toDateString(),
+            ])
             // ไม่มี join และไม่มี alias ตาราง raw ตรงนี้จึงไม่โดนเรื่อง DB_PREFIX
             ->selectRaw('COUNT(*) as bills')
             ->selectRaw("SUM(CASE WHEN status = 'paid' THEN grand_total ELSE 0 END) as sales")
